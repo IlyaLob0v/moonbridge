@@ -30,7 +30,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   clock = new Date("2026-11-30T09:00:00Z");
-  await sql.exec("TRUNCATE accounts, school_groups, group_members, invites, payments, balance_entries, lesson_prices CASCADE");
+  await sql.exec("TRUNCATE accounts, school_groups, group_members, invites, payments, balance_entries, lesson_prices, lessons CASCADE");
 });
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -143,6 +143,25 @@ describe("the student's account", () => {
     expect((await pay(a, t, s.id, { amount_rub: 10, method: "online" })).statusCode).toBe(400);
     expect((await price(a, t, s.id, 0)).statusCode).toBe(400);
     expect((await price(a, t, s.id, 1500.001)).statusCode).toBe(400);
+  });
+});
+
+describe("held lessons", () => {
+  it("are charged at the student's price when the teacher marks them present, and given back when the mark changes", async () => {
+    const a = await app();
+    const t = await teacher(a);
+    const s = await student(a, t);
+    await a.inject({ method: "PATCH", url: `/school/groups/${s.groupId}`, headers: auth(t), payload: { schedule: [{ weekday: 2, time: "18:30", minutes: 60 }] } });
+    await price(a, t, s.id, 1500);
+    await pay(a, t, s.id, { amount_rub: 6000, method: "transfer" });
+    const [lesson] = (await a.inject({ url: `/school/groups/${s.groupId}/lessons`, headers: auth(t) })).json().lessons;
+    clock = new Date("2026-12-01T16:40:00Z"); // Tuesday, after the lesson
+    const mark = (status: string) => a.inject({ method: "PUT", url: `/school/lessons/${lesson.lesson_id}/attendance`, headers: auth(t), payload: { marks: [{ account_id: s.id, status }] } });
+    expect((await mark("present")).statusCode).toBe(200);
+    await mark("present");
+    expect(await balanceOf(a, s.token, s.id)).toMatchObject({ lessons_held: 1, held_rub: 1500, balance_rub: 4500, lessons_left: 3 });
+    await mark("absent");
+    expect(await balanceOf(a, s.token, s.id)).toMatchObject({ lessons_held: 0, balance_rub: 6000, lessons_left: 4 });
   });
 });
 

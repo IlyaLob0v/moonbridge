@@ -1,6 +1,7 @@
 import { ApiError, type Api, type Dashboard, type GroupProgress, type GroupView, type HomeworkView, type QueueItem, type SlotView } from "../net/api.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
+import { toMark } from "./lessons.js";
 import { weekDots } from "./report.js";
 import { fileSize, loadDashboard, scheduleText, when } from "./school.js";
 
@@ -170,6 +171,7 @@ function studentsTable(progress: GroupProgress): HTMLElement {
               s.week.accuracy === null ? "нет ответов" : `${s.week.accuracy}% с первого раза`,
               s.week.errors[0] ? `чаще всего: ${s.week.errors[0].label.toLowerCase()}` : undefined,
               s.homework_open ? `не сдано: ${s.homework_open}` : undefined,
+              s.lessons?.held ? `на уроках: ${s.lessons.present} из ${s.lessons.held}` : undefined,
             ]
               .filter(Boolean)
               .join(" · "),
@@ -208,6 +210,7 @@ function groupCard(g: GroupView, dash: Dashboard, progress: GroupProgress | unde
   });
 
   const homework = dash.homework.filter((h) => h.group_id === g.group_id);
+  const unmarked = toMark((dash.lessons ?? []).filter((l) => l.group_id === g.group_id), now).length;
   return el(
     "section",
     { class: "card group", "data-group": g.group_id },
@@ -218,6 +221,7 @@ function groupCard(g: GroupView, dash: Dashboard, progress: GroupProgress | unde
     progress ? studentsTable(progress) : el("p", {}, members.length ? members.map((m) => m.name).join(", ") : "Учеников пока нет"),
     inviteButton,
     inviteBox,
+    el("a", { class: "metrics-link", href: `/teacher/lessons/${g.group_id}`, "data-link": "", "data-lessons-link": g.group_id }, unmarked ? `Уроки: отметить посещаемость (${unmarked}) →` : "Уроки, материалы и посещаемость →"),
     el("a", { class: "metrics-link", href: `/teacher/metrics/${g.group_id}`, "data-link": "", "data-metrics": g.group_id }, "Метрики пилота →"),
     el("h3", {}, "Домашка"),
     ...(homework.length ? homework.map((h) => homeworkItem(h, members.length, now, d)) : [el("p", { class: "muted" }, "Ещё ничего не задано.")]),

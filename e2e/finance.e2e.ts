@@ -1,13 +1,12 @@
 // End-to-end check of the finances, on phone screens (390 × 844):
 //
 //   a teacher and a group with two students exist (made through the gateway) → the teacher
-//   opens "Оплаты" from the cabinet, records Анна's payment for 8 lessons, adds a free trial
-//   lesson by hand, records a payment for Борис by mistake and voids it → the month's total
-//   counts only Анна's payment → Анна signs in on her phone and finds her balance on Today
-//   and its history on its own page; Борис, with nothing paid, is asked to pay.
-//
-// Held lessons take a lesson off by themselves (the lessons' attendance); that part is
-// covered by the gateway's tests.
+//   opens "Оплаты" from the cabinet, sets Анна's price per lesson, records her payment (the
+//   form shows how many lessons it pays for) and adds a free trial lesson by hand → a lesson
+//   is held and Анна marked present: it costs her price by itself → Борис gets a payment by
+//   mistake, which is voided → the totals on top: held, paid, left; the month's total →
+//   Анна signs in on her phone and sees the same totals, her held lessons and her payments;
+//   Борис, with nothing paid, is asked to pay.
 //
 // Run: pnpm e2e:finance        (HEADED=1 to watch it)
 import { mkdir } from "node:fs/promises";
@@ -45,6 +44,18 @@ async function main(): Promise<void> {
   await api(`/invites/${code}/join`, { body: { name: "Анна", login: "anna", password: "moon-123" } });
   await api(`/invites/${code}/join`, { body: { name: "Борис", login: "boris", password: "moon-123" } });
 
+  const anna = (await api<{ students: { id: string; name: string }[] }>("/school/finance", { token: t })).students.find((x) => x.name === "Анна")!;
+  /** A lesson that started an hour ago, held, with Анна present: the lessons' attendance charges it. */
+  const holdLesson = async () => {
+    const lesson = (await api<{ lesson: { lesson_id: string } }>(`/school/groups/${groupId}/lessons`, { token: t, body: { starts_at: new Date(Date.now() - 3600_000).toISOString(), minutes: 45 } })).lesson;
+    const res = await fetch(`${GATEWAY}/school/lessons/${lesson.lesson_id}/attendance`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${t}`, "content-type": "application/json" },
+      body: JSON.stringify({ marks: [{ account_id: anna.id, status: "present" }] }),
+    });
+    if (!res.ok) throw new Error(`attendance: HTTP ${res.status}`);
+  };
+
   const browser = await chromium.launch({ headless: !process.env.HEADED });
   const errors: string[] = [];
   const open = async (): Promise<Page> => {
@@ -55,63 +66,77 @@ async function main(): Promise<void> {
   };
 
   try {
-    step("The teacher records payments");
+    step("The teacher sets a price and records payments");
     const teacher = await open();
     await signIn(teacher, "ksenia", "teach-123");
     await teacher.locator('[data-section="teacher"]').click();
     await teacher.locator("[data-finance]").click();
-    const anna = teacher.locator(".finance-student", { hasText: "Анна" });
+    const annaRow = teacher.locator(".finance-student", { hasText: "Анна" });
     const boris = teacher.locator(".finance-student", { hasText: "Борис" });
-    await anna.waitFor();
-    check((await anna.locator("[data-badge]").innerText()) === "0", "a new student has no paid lessons");
+    await annaRow.waitFor();
+    check((await annaRow.locator("[data-badge]").innerText()) === "—" && /цена не задана/.test(await annaRow.locator("summary").innerText()), "a new student has no price yet");
 
-    await anna.locator("summary").click();
-    const pay = anna.locator('[data-form="payment"]');
-    await pay.getByLabel("Уроков").fill("8");
+    await annaRow.locator("summary").click();
+    const priceForm = annaRow.locator('[data-form="price"]');
+    await priceForm.getByLabel("Цена урока, ₽").fill("1500");
+    await priceForm.getByRole("button", { name: "Задать" }).click();
+    await annaRow.locator('[data-badge="0"]').waitFor();
+
+    const pay = annaRow.locator('[data-form="payment"]');
     await pay.getByLabel("Сумма, ₽").fill("12000");
+    check(/= 8 уроков по 1\s500\s₽/.test(await pay.locator("[data-hint]").innerText()), "the form shows the payment is 8 lessons at her price");
     await pay.getByLabel("Как").selectOption("transfer");
     await pay.getByLabel("Комментарий").fill("абонемент на декабрь");
     await pay.getByRole("button", { name: "Записать оплату" }).click();
-    await anna.locator('[data-badge="8"]').waitFor();
-    check(/Оплата .*12\s000\s₽, перевод/.test(await anna.locator(".ledger").innerText()), "Анна's payment is in her history: 8 lessons");
+    await annaRow.locator('[data-badge="8"]').waitFor();
+    check(true, "after the payment Анна has 8 lessons");
 
-    await anna.locator(".correction summary").click();
-    const fix = anna.locator('[data-form="correction"]');
-    await fix.getByLabel("Уроков, + или −").fill("1");
+    await annaRow.locator(".correction summary").click();
+    const fix = annaRow.locator('[data-form="correction"]');
+    await fix.getByLabel("Сколько, + или −").fill("1");
     await fix.getByLabel("За что").fill("пробный урок бесплатно");
     await fix.getByRole("button", { name: "Исправить баланс" }).click();
-    await anna.locator('[data-badge="9"]').waitFor();
+    await annaRow.locator('[data-badge="9"]').waitFor();
     check(true, "a free trial lesson added by hand makes 9");
+
+    await holdLesson();
+    await teacher.reload();
+    await annaRow.locator('[data-badge="8"]').waitFor();
+    await annaRow.locator("summary").click();
+    await annaRow.locator('[data-list="lessons"]').waitFor();
+    check((await annaRow.locator("[data-held]").innerText()).match(/1 урок · 1\s500\s₽/) !== null, "the held lesson cost her price by itself");
+    check((await annaRow.locator("[data-left]").innerText()).match(/12\s000\s₽ · 8 уроков/) !== null, "on top: 13 500 ₽ in, 1 500 ₽ held, 12 000 ₽ = 8 lessons left");
     await teacher.screenshot({ path: `${ARTIFACTS}finance-teacher.png`, fullPage: true });
     check(await noSideScroll(teacher), "the finance page fits the phone");
 
     await boris.locator("summary").click();
     const payB = boris.locator('[data-form="payment"]');
-    await payB.getByLabel("Уроков").fill("4");
     await payB.getByLabel("Сумма, ₽").fill("6000");
     await payB.getByRole("button", { name: "Записать оплату" }).click();
-    await boris.locator('[data-badge="4"]').waitFor();
+    await boris.locator('[data-list="payments"] [data-void]').waitFor();
     await boris.locator("[data-void]").click();
-    await boris.locator('[data-badge="0"]').waitFor();
-    check(/Оплата отменена[\s\S]*ошиблась учеником/.test(await boris.locator(".ledger").innerText()), "a payment entered by mistake is voided, with the reason in the history");
+    await boris.locator('[data-entry="void"]').waitFor();
+    check(/Оплата отменена[\s\S]*ошиблась учеником/.test(await boris.locator('[data-list="payments"]').innerText()), "a payment entered by mistake is voided, with the reason in the history");
+    check((await boris.locator("[data-left]").innerText()).startsWith("0"), "Борис is back to zero");
 
-    await teacher.reload();
     const month = await teacher.locator("[data-month]").innerText();
-    check(/12\s000\s₽/.test(month) && /Оплат: 1/.test(month), "the month's total counts Анна's payment only");
+    check(/12\s000\s₽ · оплат 1/.test(month) && /1 урок · 1\s500\s₽/.test(month), "the month: Анна's payment received, one lesson held");
 
-    step("Анна sees her balance");
+    step("Анна sees her account");
     const phone = await open();
     await signIn(phone, "anna", "moon-123");
     const card = phone.locator('[data-card="balance"]');
     await card.waitFor();
-    check(/Осталось 9 уроков/.test(await card.innerText()), "Today shows 9 paid lessons");
+    check(/Осталось 8 уроков/.test(await card.innerText()), "Today shows 8 lessons left");
     await phone.screenshot({ path: `${ARTIFACTS}finance-student-today.png`, fullPage: true });
     await card.click();
-    await phone.locator(".ledger").waitFor();
-    const history = await phone.locator(".ledger").innerText();
-    check(/пробный урок бесплатно/.test(history) && /абонемент на декабрь/.test(history) && !/ksenia|Ксения/.test(history), "her history shows the payment and the trial lesson, not who entered them");
+    await phone.locator('[data-list="lessons"]').waitFor();
+    check(/Урок [\s\S]*−1\s500\s₽/.test(await phone.locator('[data-list="lessons"]').innerText()), "her held lessons, each with its price");
+    const history = await phone.locator('[data-list="payments"]').innerText();
+    check(/пробный урок бесплатно/.test(history) && /абонемент на декабрь/.test(history) && !/Ксения/.test(history), "her payments and the trial lesson, not who entered them");
+    check(/12\s000\s₽ · 8 уроков/.test(await phone.locator("[data-left]").innerText()), "and the same totals on top");
     await phone.screenshot({ path: `${ARTIFACTS}finance-student-history.png`, fullPage: true });
-    check(await noSideScroll(phone), "the balance page fits the phone");
+    check(await noSideScroll(phone), "the page fits the phone");
 
     step("Борис has nothing paid");
     const phoneB = await open();

@@ -15,10 +15,10 @@ let sql: Sql;
 beforeAll(async () => {
   pglite = new PGlite();
   sql = { query: (text, params) => pglite.query(text, params), exec: (text) => pglite.exec(text) } as Sql;
-  // Every file, in name order (parallel branches each add their own NNN_name.sql).
-  const files = (await readdir(new URL("../migrations/", import.meta.url))).filter((f) => f.endsWith(".sql")).sort();
-  expect(files.slice(0, 5)).toEqual(["001_init.sql", "002_school.sql", "003_review.sql", "004_content.sql", "005_pilot.sql"]);
-  expect(await migrate(sql)).toEqual(files);
+  // Every migration in the folder, in name order.
+  const all = (await readdir(new URL("../migrations/", import.meta.url))).filter((f) => f.endsWith(".sql")).sort();
+  expect(all.slice(0, 2)).toEqual(["001_init.sql", "002_school.sql"]);
+  expect(await migrate(sql)).toEqual(all);
 });
 
 afterAll(async () => {

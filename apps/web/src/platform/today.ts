@@ -5,6 +5,7 @@ import { hotelView, migrateState, studentCourse } from "../moonbridge/progress.j
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
 import { balanceCard } from "./finance.js";
+import { toMark } from "./lessons.js";
 import { myWeekCard } from "./report.js";
 import { studentCards } from "./school.js";
 
@@ -31,12 +32,14 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
   if (d.school?.role === "teacher") {
     const groups = d.school.dashboard?.groups ?? [];
     const waiting = (d.school.dashboard?.homework ?? []).reduce((n, h) => n + (h.submissions ?? []).filter((s) => !s.review).length, 0);
+    const unmarked = toMark(d.school.dashboard?.lessons ?? [], now).length;
     cards.push(
       el(
         "a",
         { class: "card section-card teacher-card", href: "/teacher", "data-link": "", "data-section": "teacher" },
         el("h2", {}, "Кабинет преподавателя"),
         el("p", {}, groups.length ? `Групп: ${groups.length}. ${waiting ? `Ждут проверки: ${waiting}.` : "Все файлы проверены."}` : "Создайте первую группу и пригласите учеников."),
+        ...(unmarked ? [el("p", { "data-unmarked": String(unmarked) }, `Отметить посещаемость: ${unmarked} ${plural(unmarked, "урок", "урока", "уроков")}.`)] : []),
         el("span", { class: "card-action" }, "Открыть →"),
       ),
     );

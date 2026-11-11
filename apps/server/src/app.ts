@@ -15,6 +15,7 @@ import type { PlatformRegistry } from "./lti/platforms.js";
 import type { ProgressStore } from "./progress.js";
 import type { ScoreStore } from "./scores.js";
 import type { FileStore } from "./school/files.js";
+import type { LessonBilling } from "./school/lessons.js";
 import { schoolRoutes } from "./school/routes.js";
 import type { SchoolStore } from "./school/store.js";
 import type { Session, SessionTokens } from "./session.js";
@@ -36,7 +37,7 @@ export interface AppDeps {
   progress: ProgressStore;
   toolKeys: ToolKeys;
   /** Accounts, groups, homework and hand-in files. Without it the gateway serves guests and LMS launches only. */
-  school?: { store: SchoolStore; files: FileStore; now?: () => Date };
+  school?: { store: SchoolStore; files: FileStore; now?: () => Date; billing?: LessonBilling };
 }
 
 declare module "fastify" {
@@ -135,6 +136,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   });
 
   if (d.school) {
+    const store = d.school.store;
     await schoolRoutes(app, {
       config: d.config,
       tokens: d.tokens,
@@ -143,6 +145,11 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       errorLabel: (id) => live.bundle.taxonomy.error_types.find((t) => t.id === id)?.label.ru,
       content: { live, ...(d.fetchSheet ? { fetch: d.fetchSheet } : {}) },
       ...(d.school.now ? { now: d.school.now } : {}),
+      // Held lessons cost the student's price (school/finance.ts) unless a test passes its own billing.
+      billing: d.school.billing ?? {
+        charge: (accountId, lessonId, at, by) => store.finance.chargeLesson(accountId, lessonId, at, by),
+        uncharge: (accountId, lessonId) => store.finance.unchargeLesson(accountId, lessonId),
+      },
     });
   }
 

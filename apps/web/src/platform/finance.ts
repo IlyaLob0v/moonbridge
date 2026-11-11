@@ -72,7 +72,7 @@ function lessonList(entries: LedgerEntryView[]): HTMLElement {
   return el(
     "ul",
     { class: "ledger", "data-list": "lessons" },
-    ...held.map((e) => el("li", { "data-entry": "lesson" }, el("span", {}, `Урок ${dayMonth(new Date(e.at))}`), el("span", { class: "amount minus" }, e.amount_rub === null ? "цена не задана" : rub(e.amount_rub)))),
+    ...held.map((e) => el("li", { "data-entry": "lesson" }, el("span", {}, `Урок ${dayMonth(new Date(e.at))}`), el("span", { class: "amount minus" }, e.amount_rub === null ? "цена не задана" : `−${rub(Math.abs(e.amount_rub))}`))),
   );
 }
 
