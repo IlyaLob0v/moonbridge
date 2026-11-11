@@ -159,6 +159,21 @@ describe("reminders", () => {
     expect(deadline[0]!.subject).toBe("Домашка до 1 декабря в 18:00: Расскажи о себе");
   });
 
+  it("reminds only the student a homework was given to", async () => {
+    const app = await school();
+    const { t, groupId, code } = await setup(app);
+    const boris = (await enrol(app, code, { login: "boris", email: "boris@mail.ru" })).json().account.id as string;
+    await enrol(app, code, { login: "anna", email: "anna@mail.ru" });
+    await app.inject({
+      method: "POST",
+      url: `/school/groups/${groupId}/homework`,
+      headers: auth(t),
+      payload: { title: "Только Борису", due_at: "2026-12-01T15:00:00.000Z", needs_file: true, account_id: boris },
+    });
+    await reminders().run(new Date("2026-11-30T16:00:00Z"));
+    expect(mailer.sent.filter((m) => m.subject.startsWith("Домашка")).map((m) => m.to)).toEqual(["boris@mail.ru"]);
+  });
+
   it("sends the grade with the teacher's comment; the button counts the return and opens the homework", async () => {
     const app = await school();
     const { t, groupId, code } = await setup(app);

@@ -205,6 +205,13 @@ details.new-homework summary { cursor: pointer; color: var(--accent); padding: 8
 .feedback-form textarea { resize: vertical; font-size: 16px; }
 .feedback + .sign-out { margin-top: 4px; }
 
+/* A Moonbridge unit as homework: its episodes with a tick, and the lesson catalog. */
+.unit-episodes { list-style: none; padding: 0; margin: 8px 0 12px; }
+.unit-episodes li { padding: 4px 0; }
+.unit-episodes li.done { color: var(--ink-dim); }
+.catalog-unit.no-episodes { opacity: 0.7; }
+.assign-unit summary { cursor: pointer; margin-top: 8px; font-weight: 600; }
+
 /* Lessons: the student's list, the teacher's marks */
 .lesson-list { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; }
 .lesson-list .lesson-item { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--edge); background: #1f1b2b; overflow-wrap: anywhere; }

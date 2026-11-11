@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { validateContent, type ContentBundle, type ContentSource } from "@moonbridge/content";
 import { buildBundle } from "@moonbridge/content/node";
-import { attemptOf, XapiProfile, Outbox, validateStatement, type Attempt, type Statement } from "@moonbridge/xapi";
+import { attemptOf, episodeResultOf, XapiProfile, Outbox, validateStatement, type Attempt, type EpisodeResult, type Statement } from "@moonbridge/xapi";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { ServerConfig } from "./config.js";
 import { LiveContent } from "./content/live.js";
@@ -18,6 +18,7 @@ import type { FileStore } from "./school/files.js";
 import type { MailDeps } from "./school/email-routes.js";
 import type { LessonBilling } from "./school/lessons.js";
 import { schoolRoutes } from "./school/routes.js";
+import { settleUnitHomework } from "./school/units.js";
 import type { SchoolStore } from "./school/store.js";
 import type { Session, SessionTokens } from "./session.js";
 
@@ -172,6 +173,19 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (d.school) {
       const attempts = accepted.map((s) => attemptOf(s, profile)).filter((a): a is Attempt => a !== undefined);
       await d.school.store.recordAttempts(attempts).catch((e) => req.log.error({ err: e }, "attempts not recorded"));
+      // Finished episodes count towards a unit given as homework. The unit comes from the live
+      // content, not from the statement, and an episode the content does not know is skipped.
+      const episodes = new Map(live.bundle.moonbridge?.episodes.map((e) => [e.episode_id, e.module_id]) ?? []);
+      const finished = accepted
+        .map((s) => episodeResultOf(s, profile))
+        .filter((r): r is EpisodeResult => r !== undefined && episodes.has(r.episodeId))
+        .map((r) => ({ ...r, moduleId: episodes.get(r.episodeId)! }));
+      if (finished.length) {
+        await d.school.store
+          .recordEpisodeResults(finished)
+          .then(() => settleUnitHomework(d.school!.store, live.bundle, finished, d.school!.now?.() ?? new Date()))
+          .catch((e) => req.log.error({ err: e }, "episode results not recorded"));
+      }
     }
     void d.outbox.flush().catch((e) => app.log.error(e, "xAPI flush failed"));
     return reply.code(202).send({ accepted: accepted.length, new: added, ids: accepted.map((s) => s.id) });

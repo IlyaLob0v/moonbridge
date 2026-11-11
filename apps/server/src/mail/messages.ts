@@ -70,12 +70,15 @@ export function eveningMail(r: Recipient, links: Links): Mail {
   });
 }
 
-export function deadlineMail(r: Recipient, hw: { title: string; dueAt: Date }, links: Links): Mail {
+export function deadlineMail(r: Recipient, hw: { title: string; dueAt: Date; unit?: boolean }, links: Links): Mail {
   return layout({
     to: r.email,
     subject: `Домашка до ${moscowWhen(hw.dueAt)}: ${hw.title}`,
-    lines: [`${r.name}, домашку «${hw.title}» нужно сдать до ${moscowWhen(hw.dueAt)} (по Москве).`, "Файл ещё не отправлен."],
-    button: { label: "Сдать домашку", url: links.go },
+    lines: [
+      `${r.name}, домашку «${hw.title}» нужно сдать до ${moscowWhen(hw.dueAt)} (по Москве).`,
+      hw.unit ? "Эпизоды юнита в отеле ещё не пройдены." : "Файл ещё не отправлен.",
+    ],
+    button: { label: hw.unit ? "Открыть домашку" : "Сдать домашку", url: links.go },
     unsubscribeUrl: links.unsubscribe,
   });
 }

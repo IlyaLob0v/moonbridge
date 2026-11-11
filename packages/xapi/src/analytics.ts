@@ -104,3 +104,29 @@ export function attemptOf(s: Statement, profile: XapiProfile): Attempt | undefin
     ...(typeof game?.mode === "string" ? { mode: game.mode } : {}),
   };
 }
+
+/** A finished Moonbridge episode, as the gateway keeps it for homework. */
+export interface EpisodeResult {
+  statementId: string;
+  playerId: string;
+  episodeId: string;
+  /** The unit the client says the episode belongs to; the gateway checks it against the live content. */
+  moduleId: string;
+  /** Tasks answered right on the first try, out of `tasks`. */
+  right: number;
+  tasks: number;
+  finishedAt: Date;
+}
+
+/** Reads a `completed` episode statement back; undefined for any other statement or a score that makes no sense. */
+export function episodeResultOf(s: Statement, profile: XapiProfile): EpisodeResult | undefined {
+  if (s.verb.id !== ADL_VERBS.completed) return undefined;
+  const base = profile.baseIri;
+  const episodeId = lastSegment(s.object.id, `${base}/xapi/moonbridge/episodes/`);
+  const moduleId = lastSegment(s.context?.contextActivities?.parent?.[0]?.id, `${base}/xapi/modules/`);
+  const right = s.result?.score?.raw;
+  const tasks = s.result?.score?.max;
+  if (!episodeId || !moduleId || !Number.isInteger(right) || !Number.isInteger(tasks)) return undefined;
+  if (right! < 0 || tasks! < 0 || right! > tasks! || tasks! > 1000) return undefined;
+  return { statementId: s.id, playerId: s.actor.account.name, episodeId, moduleId, right: right!, tasks: tasks!, finishedAt: new Date(s.timestamp ?? Date.now()) };
+}

@@ -15,6 +15,8 @@ export interface DeadlineDue extends Addressee {
   homeworkId: string;
   title: string;
   dueAt: Date;
+  /** A Moonbridge unit to play, not a file to hand in. */
+  unit: boolean;
 }
 
 export interface GradeDue extends Addressee {
@@ -88,16 +90,20 @@ export class EmailStore {
     return rows.map(addressee);
   }
 
-  /** File homework due in (from, to] that the student has not handed in. */
+  /**
+   * Homework due in (from, to] that the student has not handed in: a file, or a Moonbridge unit
+   * (its result arrives as a hand-in). Homework given to one student reminds only that student.
+   */
   async deadlines(from: Date, to: Date): Promise<DeadlineDue[]> {
-    const { rows } = await this.sql.query<AddresseeRow & { homework_id: string; title: string; due_at: Date }>(
-      `SELECT a.account_id, a.name, a.email, a.player_id, h.homework_id, h.title, h.due_at
+    const { rows } = await this.sql.query<AddresseeRow & { homework_id: string; title: string; due_at: Date; module_id: string | null }>(
+      `SELECT a.account_id, a.name, a.email, a.player_id, h.homework_id, h.title, h.due_at, h.module_id
        FROM homework h JOIN group_members m ON m.group_id = h.group_id JOIN accounts a ON a.account_id = m.account_id
-       WHERE ${REACHABLE} AND h.needs_file AND h.due_at > $1 AND h.due_at <= $2
+       WHERE ${REACHABLE} AND (h.needs_file OR h.module_id IS NOT NULL) AND (h.account_id IS NULL OR h.account_id = a.account_id)
+         AND h.due_at > $1 AND h.due_at <= $2
          AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.homework_id = h.homework_id AND s.account_id = a.account_id)`,
       [from, to],
     );
-    return rows.map((r) => ({ ...addressee(r), homeworkId: r.homework_id, title: r.title, dueAt: new Date(r.due_at) }));
+    return rows.map((r) => ({ ...addressee(r), homeworkId: r.homework_id, title: r.title, dueAt: new Date(r.due_at), unit: r.module_id !== null }));
   }
 
   /** Reviews made since `since`. */

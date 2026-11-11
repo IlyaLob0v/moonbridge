@@ -122,7 +122,7 @@ async function main(): Promise<void> {
   const teacherCreated = await api("/admin/teachers", { token: ADMIN, body: { name: "Ксения", login: "ksenia", password: "teach-123" } });
   check(teacherCreated.status === 201, "the admin creates the teacher");
   const teacherToken = (await api<{ token: string }>("/auth/login", { body: { login: "ksenia", password: "teach-123" } })).json.token;
-  const group = (await api<{ group: { group_id: string } }>("/school/groups", { token: teacherToken, body: { name: "Друзья", schedule: [] } })).json.group;
+  const group = (await api<{ group: { group_id: string } }>("/school/groups", { token: teacherToken, body: { name: "Друзья", schedule: [], unit_access: "course" } })).json.group;
   const invite = (await api<{ code: string }>(`/school/groups/${group.group_id}/invites`, { token: teacherToken, body: {} })).json;
   for (const s of students) {
     const joined = await api(`/invites/${invite.code}/join`, { body: { name: s.name, login: s.login, password: "moon-123" } });

@@ -31,9 +31,12 @@ export interface SubmissionView {
   submission_id: string;
   account_id: string;
   student_name: string;
-  file_name: string;
-  mime: string;
-  size: number;
+  /** Null for a Moonbridge unit's result, which has a score instead of a file. */
+  file_name: string | null;
+  mime: string | null;
+  size: number | null;
+  /** A unit's result: tasks right on the first try out of all, and the grade that suggests. */
+  score: { right: number; total: number; suggested_grade: number } | null;
   submitted_at: string;
   /** The teacher's grade (1–5) and comment; null until the teacher has looked at this file. */
   review: { grade: number; comment: string; reviewed_at: string } | null;
@@ -198,6 +201,8 @@ export interface GroupView {
   teacher_name: string;
   call_url: string | null;
   schedule: SlotView[];
+  /** "assigned": a unit opens in the hotel when the teacher gives it as homework; "course": units open in course order by themselves. */
+  unit_access: "assigned" | "course";
   /** Teachers only. */
   members?: { id: string; name: string }[];
 }
@@ -209,7 +214,15 @@ export interface HomeworkView {
   description: string;
   due_at: string | null;
   needs_file: boolean;
+  /** A Moonbridge unit from the lesson catalog, played instead of handed in. */
+  module_id: string | null;
+  /** One student of the group; null = the whole group. */
+  account_id: string | null;
+  assignee_name: string | null;
+  auto_grade: boolean;
   created_at: string;
+  /** Students, for a unit: its episodes and which of them they have played since it was given. */
+  unit?: { title: string; episodes: { episode_id: string; title: string; done: boolean }[] };
   /** Students: their own hand-in. */
   submission?: SubmissionView | null;
   /** Teachers: everyone's hand-ins. */
@@ -235,10 +248,24 @@ export interface NewGroup {
 }
 
 export interface NewHomework {
-  title: string;
-  description: string;
+  title?: string;
+  description?: string;
   due_at: string | null;
-  needs_file: boolean;
+  needs_file?: boolean;
+  module_id?: string;
+  account_id?: string | null;
+  auto_grade?: boolean;
+}
+
+/** A unit of the lesson catalog (apps/server/src/school/units.ts). */
+export interface CatalogUnit {
+  module_id: string;
+  cefr_level: string;
+  title: { en: string; ru: string };
+  description: string | null;
+  skill: string;
+  episodes: { episode_id: string; title: string; place: string; tasks: number }[];
+  tasks: number;
 }
 
 /** What the client knows about its session; persisted so the game starts offline too. */
@@ -371,12 +398,21 @@ export class Api {
     return this.json<{ group: GroupView }>("/school/groups", { method: "POST", body: JSON.stringify(group) }, token);
   }
 
+  updateGroup(token: string, groupId: string, patch: Partial<NewGroup> & { unit_access?: GroupView["unit_access"] }) {
+    return this.json<{ group: GroupView }>(`/school/groups/${groupId}`, { method: "PATCH", body: JSON.stringify(patch) }, token);
+  }
+
   createInvite(token: string, groupId: string) {
     return this.json<{ code: string; url: string; expires_at: string }>(`/school/groups/${groupId}/invites`, { method: "POST" }, token);
   }
 
   createHomework(token: string, groupId: string, hw: NewHomework) {
     return this.json<{ homework: HomeworkView }>(`/school/groups/${groupId}/homework`, { method: "POST", body: JSON.stringify(hw) }, token);
+  }
+
+  /** The lesson catalog: units in course order with their Moonbridge episodes. */
+  catalog(token: string) {
+    return this.json<{ units: CatalogUnit[] }>("/school/catalog", {}, token);
   }
 
   /** The account's lessons: the last two months and the coming four weeks. */
