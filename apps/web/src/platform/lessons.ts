@@ -1,7 +1,7 @@
 import { ApiError, type Api, type Dashboard, type LessonMaterial, type LessonView, type StudentLesson, type TeacherLesson } from "../net/api.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
-import { loadDashboard, when } from "./school.js";
+import { fileSize, loadDashboard, when } from "./school.js";
 import { moscowInputToIso } from "./teacher.js";
 
 // Lessons as the platform keeps them: the lesson itself happens in a video service; here are
@@ -53,6 +53,8 @@ const STATUS: Record<string, string> = { present: "был(а) на уроке", 
 
 function links(l: LessonView): HTMLElement[] {
   const items = [
+    // Opened by openLessonFile (main.ts): the download link is asked for on tap and lives five minutes.
+    ...(l.files ?? []).map((f) => el("a", { href: "#", "data-lesson-file": f.file_id, title: fileSize(f.size) }, f.file_name)),
     ...l.materials.map((m) => el("a", { href: m.url, target: "_blank", rel: "noopener", "data-material": "" }, m.title)),
     ...(l.recording_url ? [el("a", { href: l.recording_url, target: "_blank", rel: "noopener", "data-recording": "" }, "Запись урока")] : []),
   ];
@@ -98,7 +100,7 @@ export function lessonCard(d: Dashboard, lessons: StudentLesson[], now: Date): H
 
 /** The last lessons with materials or a recording, for Today. */
 export function pastLessonsCard(lessons: StudentLesson[], now: Date): HTMLElement | undefined {
-  const past = lessons.filter((l) => l.status === "held" && starts(l) <= now.getTime() && (l.materials.length || l.recording_url)).sort((a, b) => starts(b) - starts(a)).slice(0, 2);
+  const past = lessons.filter((l) => l.status === "held" && starts(l) <= now.getTime() && (l.materials.length || l.recording_url || l.files?.length)).sort((a, b) => starts(b) - starts(a)).slice(0, 2);
   if (!past.length) return undefined;
   return el("div", { class: "card", "data-card": "past-lessons" }, el("h2", {}, "Прошедшие занятия"), el("ul", { class: "lesson-list" }, ...past.map((l) => studentLessonItem(l, now))));
 }
@@ -140,6 +142,19 @@ export async function renderStudentLessons(root: HTMLElement, d: StudentLessonsD
       ),
     ),
   );
+}
+
+/** Downloads a lesson file: a short-lived link, opened like any download so the file keeps its name. */
+export async function openLessonFile(api: Api, token: string | undefined, fileId: string, a: HTMLElement): Promise<void> {
+  if (!token) {
+    a.textContent = "Файл скачивается, когда есть связь с сервером";
+    return;
+  }
+  try {
+    location.assign(await api.lessonFileLink(token, fileId));
+  } catch (e) {
+    a.textContent = messageOf(e);
+  }
 }
 
 // ---------- The teacher's lessons of a group
@@ -257,8 +272,61 @@ function teacherLessonItem(l: TeacherLesson, now: Date, token: string, api: Api,
     if (l.status !== "cancelled" && !confirm(l.status === "held" ? "Урок уже отмечен. Отменить его и снять отметки?" : "Отменить урок? Ученики увидят это на «Сегодня».")) return;
     void run(toggle, () => api.updateLesson(token, l.lesson_id, { status: l.status === "cancelled" ? "planned" : "cancelled", ...(l.status !== "cancelled" ? { note: note.value.trim() } : {}) }))();
   });
-  parts.push(el("details", { class: "new-homework" }, el("summary", {}, "Тема, материалы, запись"), form, toggle), error);
+  parts.push(el("details", { class: "new-homework" }, el("summary", {}, "Тема, материалы, запись"), form, lessonFiles(l, token, api, rerender), toggle), error);
   return el("div", { class: `hw-item lesson-item ${l.status}`, "data-lesson": l.lesson_id, "data-status": l.status }, ...parts);
+}
+
+/** The lesson's files: each with a remove button, and an upload from the phone or computer (up to 50 MB). */
+function lessonFiles(l: TeacherLesson, token: string, api: Api, rerender: () => void): HTMLElement {
+  const MAX = 50 * 1024 * 1024;
+  const error = el("p", { class: "form-error", role: "alert" });
+  const list = (l.files ?? []).map((f) => {
+    const remove = el("button", { type: "button", class: "link", "data-remove-file": f.file_id }, "Удалить") as HTMLButtonElement;
+    remove.addEventListener("click", async () => {
+      if (!confirm(`Удалить ${f.file_name}? Ученики больше не смогут его скачать.`)) return;
+      remove.disabled = true;
+      try {
+        await api.deleteLessonFile(token, l.lesson_id, f.file_id);
+        rerender();
+      } catch (e) {
+        error.textContent = messageOf(e);
+        remove.disabled = false;
+      }
+    });
+    return el("li", {}, el("a", { href: "#", "data-lesson-file": f.file_id }, f.file_name), el("span", { class: "muted" }, ` ${fileSize(f.size)} `), remove);
+  });
+  const input = el("input", { type: "file", class: "file-input", accept: ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.odt,.odp,.txt,image/*,audio/*,video/*", "aria-label": "Файл к уроку" }) as HTMLInputElement;
+  const bar = el("progress", { max: "1", value: "0", hidden: "" }) as HTMLProgressElement;
+  input.addEventListener("change", async () => {
+    const f = input.files?.[0];
+    if (!f) return;
+    error.textContent = "";
+    if (f.size > MAX) {
+      error.textContent = "Файл больше 50 МБ. Положите его на диск и добавьте ссылкой.";
+      input.value = "";
+      return;
+    }
+    input.disabled = true;
+    bar.hidden = false;
+    try {
+      await api.uploadLessonFile(token, l.lesson_id, f, (x) => (bar.value = x));
+      rerender();
+    } catch (e) {
+      error.textContent = messageOf(e);
+      input.disabled = false;
+      bar.hidden = true;
+      input.value = "";
+    }
+  });
+  return el(
+    "div",
+    { class: "uploader lesson-files", "data-lesson-files": l.lesson_id },
+    el("p", { class: "muted" }, "Файлы: рабочий лист, слайды, аудио, до 50 МБ каждый"),
+    ...(list.length ? [el("ul", { class: "lesson-file-list" }, ...list)] : []),
+    el("label", { class: "file-pick button" }, input, "Загрузить файл"),
+    bar,
+    error,
+  );
 }
 
 function newLessonForm(groupId: string, d: GroupLessonsDeps, rerender: () => void): HTMLElement {

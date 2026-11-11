@@ -178,7 +178,16 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     if (!reply.sent && req.account?.role !== "teacher") return reply.code(403).send({ error: "teachers only" });
   };
 
-  await lessonRoutes(app, { school: d.school, now, requireAccount, requireTeacher, ...(d.billing ? { billing: d.billing } : {}) });
+  await lessonRoutes(app, {
+    school: d.school,
+    now,
+    requireAccount,
+    requireTeacher,
+    files: d.files,
+    sessionSecret: d.config.sessionSecret,
+    acceptedType,
+    ...(d.billing ? { billing: d.billing } : {}),
+  });
 
   if (d.content) await sheetRoutes(app, { live: d.content.live, requireTeacher, accountId: (req) => req.account!.accountId, ...(d.content.fetch ? { fetch: d.content.fetch } : {}) });
 

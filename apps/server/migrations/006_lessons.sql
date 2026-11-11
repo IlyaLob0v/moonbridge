@@ -44,3 +44,16 @@ CREATE TABLE lesson_attendance (
   PRIMARY KEY (lesson_id, account_id)
 );
 CREATE INDEX lesson_attendance_account ON lesson_attendance (account_id);
+
+-- Files the teacher attaches to a lesson (a worksheet, slides, an audio track), in the same
+-- storage as homework hand-ins. Group members download them by a short-lived link.
+CREATE TABLE lesson_files (
+  file_id text PRIMARY KEY,
+  lesson_id text NOT NULL REFERENCES lessons (lesson_id) ON DELETE CASCADE,
+  file_key text NOT NULL,
+  file_name text NOT NULL,
+  mime text NOT NULL,
+  size bigint NOT NULL,
+  uploaded_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX lesson_files_lesson ON lesson_files (lesson_id, uploaded_at);

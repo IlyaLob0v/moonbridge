@@ -26,6 +26,17 @@ export interface Lesson {
   note: string;
 }
 
+/** A file the teacher attached to a lesson. */
+export interface LessonFile {
+  fileId: string;
+  lessonId: string;
+  fileKey: string;
+  fileName: string;
+  mime: string;
+  size: number;
+  uploadedAt: Date;
+}
+
 export interface Mark {
   lessonId: string;
   accountId: string;
@@ -236,4 +247,48 @@ export class LessonStore {
     );
     return rows.map((r) => ({ lessonId: r.lesson_id, accountId: r.account_id, status: r.status, markedAt: new Date(r.marked_at) }));
   }
+
+  /** Attaches a file; the lesson counts as prepared, so a schedule change keeps it. */
+  async addFile(f: { lessonId: string; fileKey: string; fileName: string; mime: string; size: number }): Promise<LessonFile> {
+    const id = `lf_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    await this.sql.query("INSERT INTO lesson_files (file_id, lesson_id, file_key, file_name, mime, size) VALUES ($1, $2, $3, $4, $5, $6)", [id, f.lessonId, f.fileKey, f.fileName, f.mime, f.size]);
+    await this.sql.query("UPDATE lessons SET edited = true WHERE lesson_id = $1", [f.lessonId]);
+    return (await this.file(id))!;
+  }
+
+  async file(fileId: string): Promise<LessonFile | undefined> {
+    const { rows } = await this.sql.query<FileRow>(`SELECT ${FILE} FROM lesson_files WHERE file_id = $1`, [fileId]);
+    return rows[0] && lessonFile(rows[0]);
+  }
+
+  /** Files of these lessons, the oldest first. */
+  async files(lessonIds: string[]): Promise<LessonFile[]> {
+    if (!lessonIds.length) return [];
+    const { rows } = await this.sql.query<FileRow>(`SELECT ${FILE} FROM lesson_files WHERE lesson_id = ANY($1::text[]) ORDER BY uploaded_at, file_id`, [lessonIds]);
+    return rows.map(lessonFile);
+  }
+
+  async deleteFile(fileId: string): Promise<void> {
+    await this.sql.query("DELETE FROM lesson_files WHERE file_id = $1", [fileId]);
+  }
 }
+
+const FILE = "file_id, lesson_id, file_key, file_name, mime, size, uploaded_at";
+interface FileRow {
+  file_id: string;
+  lesson_id: string;
+  file_key: string;
+  file_name: string;
+  mime: string;
+  size: string | number;
+  uploaded_at: Date;
+}
+const lessonFile = (r: FileRow): LessonFile => ({
+  fileId: r.file_id,
+  lessonId: r.lesson_id,
+  fileKey: r.file_key,
+  fileName: r.file_name,
+  mime: r.mime,
+  size: Number(r.size),
+  uploadedAt: new Date(r.uploaded_at),
+});

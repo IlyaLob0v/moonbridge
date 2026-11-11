@@ -7,7 +7,7 @@ import { loadDashboard, renderHomework } from "./platform/school.js";
 import { renderStudentReport } from "./platform/report.js";
 import { renderContent } from "./platform/content.js";
 import { feedbackBox } from "./platform/feedback.js";
-import { renderGroupLessons, renderStudentLessons } from "./platform/lessons.js";
+import { openLessonFile, renderGroupLessons, renderStudentLessons } from "./platform/lessons.js";
 import { renderMetrics } from "./platform/metrics.js";
 import { renderTeacher } from "./platform/teacher.js";
 import { renderToday } from "./platform/today.js";
@@ -181,6 +181,12 @@ async function boot(): Promise<void> {
     cacheLoadedAssets();
   };
   document.addEventListener("click", (e) => {
+    const file = (e.target as Element | null)?.closest?.("a[data-lesson-file]") as HTMLAnchorElement | null;
+    if (file) {
+      e.preventDefault();
+      void openLessonFile(api, session.kind === "account" ? session.token : undefined, file.dataset.lessonFile!, file);
+      return;
+    }
     const a = (e.target as Element | null)?.closest?.("a[data-link]") as HTMLAnchorElement | null;
     if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey) return;
     e.preventDefault();

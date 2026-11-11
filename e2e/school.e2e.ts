@@ -203,6 +203,10 @@ async function main(): Promise<void> {
     await extra().getByLabel("Запись урока").fill("https://example.com/recording");
     await extra().getByRole("button", { name: "Сохранить" }).click();
     await extra().locator("[data-recording]").waitFor();
+    const worksheet = Buffer.from("%PDF-1.4 worksheet for the lesson");
+    await extra().getByLabel("Файл к уроку").setInputFiles({ name: "Рабочий лист.pdf", mimeType: "application/pdf", buffer: worksheet });
+    await extra().locator(".lesson-links [data-lesson-file]").waitFor();
+    check(true, "the teacher attaches a PDF to the lesson");
     check(await extra().getByLabel("Анна").isChecked(), "every student is ticked as present by default");
     await extra().locator("[data-mark]").click();
     const held = teacher.locator('[data-lessons="past"] .lesson-item[data-status="held"]').filter({ hasText: "Знакомство" });
@@ -218,6 +222,8 @@ async function main(): Promise<void> {
     const pastList = page.locator('[data-lessons="past"]');
     await pastList.waitFor();
     check((await pastList.locator('[data-attendance="present"]').count()) === 1 && /Рабочий лист/.test(await pastList.innerText()), "the student's lessons show the mark and the materials");
+    const [lessonFile] = await Promise.all([page.waitForEvent("download"), pastList.locator("[data-lesson-file]").first().click()]);
+    check((await readFile((await lessonFile.path())!)).equals(worksheet), "the student downloads the lesson's file");
     check(await noSideScroll(page), "the student's lessons fit a 390 px screen");
     await page.screenshot({ path: `${ARTIFACTS}student-lessons.png`, fullPage: true });
     await teacher.goto(`${WEB}/teacher`);

@@ -181,3 +181,42 @@ describe("attendance", () => {
     expect((await app.inject({ url: `/school/students/${anna.id}/report`, headers: auth(anna.token) })).json().lessons).toMatchObject({ held: 0, present: 0 });
   });
 });
+
+describe("lesson files", () => {
+  it("lets the teacher attach a file that only the group can download, and remove it", async () => {
+    const { app, t, groupId, anna } = await setup();
+    const [first] = await groupLessons(app, t, groupId);
+    const put = (token: string, body: Buffer, name: string, type = "application/octet-stream") =>
+      app.inject({ method: "PUT", url: `/school/lessons/${first.lesson_id}/files?name=${encodeURIComponent(name)}`, headers: { ...auth(token), "content-type": type }, payload: body });
+
+    const slides = Buffer.from("slides for the lesson");
+    expect((await put(anna.token, slides, "x.pdf")).statusCode).toBe(403);
+    expect((await put(t, Buffer.from("MZ"), "virus.exe")).statusCode).toBe(415);
+    expect((await put(t, Buffer.alloc(0), "empty.pdf", "application/pdf")).statusCode).toBe(400);
+    const added = await put(t, slides, "Урок 1. Слайды.pptx");
+    expect(added.statusCode).toBe(201);
+    const file = added.json().lesson.files[0];
+    expect(file).toMatchObject({ file_name: "Урок 1. Слайды.pptx", mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation", size: slides.length });
+
+    const mine = (await app.inject({ url: "/school/lessons", headers: auth(anna.token) })).json().lessons;
+    expect(mine[0].files.map((f: any) => f.file_id)).toEqual([file.file_id]);
+    const link = await app.inject({ method: "POST", url: `/school/lesson-files/${file.file_id}/link`, headers: auth(anna.token) });
+    expect(link.statusCode).toBe(200);
+    const got = await app.inject({ url: link.json().url });
+    expect(got.statusCode).toBe(200);
+    expect(got.rawPayload.equals(slides)).toBe(true);
+    expect(got.headers["content-disposition"]).toContain(`filename*=UTF-8''${encodeURIComponent("Урок 1. Слайды.pptx")}`);
+    expect((await app.inject({ url: `/school/lesson-files/${file.file_id}/file?t=forged` })).statusCode).toBe(404);
+
+    const other = await teacherToken(app, "other");
+    expect((await app.inject({ method: "POST", url: `/school/lesson-files/${file.file_id}/link`, headers: auth(other) })).statusCode).toBe(404);
+
+    // A prepared lesson survives a schedule change.
+    await app.inject({ method: "PATCH", url: `/school/groups/${groupId}`, headers: auth(t), payload: { schedule: [{ weekday: 3, time: "19:00", minutes: 90 }] } });
+    expect((await groupLessons(app, t, groupId)).some((l) => l.lesson_id === first.lesson_id)).toBe(true);
+
+    const removed = await app.inject({ method: "DELETE", url: `/school/lessons/${first.lesson_id}/files/${file.file_id}`, headers: auth(t) });
+    expect(removed.json().lesson.files).toEqual([]);
+    expect((await app.inject({ url: link.json().url })).statusCode).toBe(404);
+  });
+});

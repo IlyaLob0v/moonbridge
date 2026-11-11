@@ -83,6 +83,15 @@ export interface LessonView {
   materials: LessonMaterial[];
   recording_url: string | null;
   note: string;
+  /** Files the teacher attached; missing in a dashboard kept from an older version. */
+  files?: LessonFileView[];
+}
+
+export interface LessonFileView {
+  file_id: string;
+  file_name: string;
+  mime: string;
+  size: number;
 }
 
 /** A student's view: their own mark on a held lesson. */
@@ -425,6 +434,39 @@ export class Api {
    * Sends a hand-in file as the request body. XMLHttpRequest rather than fetch, because a
    * 50 MB recording on a phone connection needs a progress bar.
    */
+  /** Attaches a file to a lesson; the answer is the lesson with its files. */
+  uploadLessonFile(token: string, lessonId: string, file: File, onProgress?: (fraction: number) => void): Promise<TeacherLesson> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", `${this.base}/school/lessons/${lessonId}/files?name=${encodeURIComponent(file.name)}`);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
+      xhr.onload = () => {
+        let body: { lesson?: TeacherLesson; message?: string } | undefined;
+        try {
+          body = JSON.parse(xhr.responseText) as typeof body;
+        } catch {
+          body = undefined;
+        }
+        if (xhr.status === 201 && body?.lesson) resolve(body.lesson);
+        else reject(new ApiError(xhr.status, `lesson file: HTTP ${xhr.status}`, body?.message));
+      };
+      xhr.onerror = () => reject(new ApiError(0, "lesson file: network error", "Нет связи. Попробуйте ещё раз, когда появится интернет."));
+      xhr.send(file);
+    });
+  }
+
+  deleteLessonFile(token: string, lessonId: string, fileId: string) {
+    return this.json<{ lesson: TeacherLesson }>(`/school/lessons/${lessonId}/files/${fileId}`, { method: "DELETE" }, token);
+  }
+
+  /** A five-minute download link to a lesson file. */
+  async lessonFileLink(token: string, fileId: string): Promise<string> {
+    const { url } = await this.json<{ url: string }>(`/school/lesson-files/${fileId}/link`, { method: "POST" }, token);
+    return `${this.base}${url}`;
+  }
+
   uploadSubmission(token: string, homeworkId: string, file: File, onProgress?: (fraction: number) => void): Promise<SubmissionView> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();

@@ -218,3 +218,4 @@ details.new-homework summary { cursor: pointer; color: var(--accent); padding: 8
 .attendance { border: 1px solid var(--edge); border-radius: 10px; display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 12px; margin: 8px 0; }
 .attendance label { display: flex; align-items: center; gap: 6px; min-height: 32px; }
 .to-mark { border-color: var(--accent); }
+.lesson-file-list { list-style: none; padding: 0; margin: 4px 0; display: grid; gap: 4px; overflow-wrap: anywhere; }

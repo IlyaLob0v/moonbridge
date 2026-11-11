@@ -1,5 +1,9 @@
+import { basename, extname } from "node:path";
+import type { Readable } from "node:stream";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { AttendanceStatus, Lesson, LessonChanges, Mark } from "./lesson-store.js";
+import { jwtVerify, SignJWT } from "jose";
+import { FileTooLargeError, type FileStore } from "./files.js";
+import type { AttendanceStatus, Lesson, LessonChanges, LessonFile, Mark } from "./lesson-store.js";
 import type { Account, Group, SchoolStore } from "./store.js";
 
 /**
@@ -19,7 +23,28 @@ export interface LessonDeps {
   billing?: LessonBilling;
   requireAccount: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
   requireTeacher: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
+  /** Where lesson files are kept (the homework hand-ins' storage). */
+  files: FileStore;
+  /** Signs the short-lived download links. */
+  sessionSecret: string;
+  /** The type of a file a student may hand in (school/routes.ts); lessons take office documents too. */
+  acceptedType: (declared: string | undefined, fileName: string) => string | undefined;
 }
+
+/** A worksheet, slides or an audio track; the same limit as a hand-in. */
+export const MAX_LESSON_FILE_BYTES = 50 * 1024 * 1024;
+const MAX_FILES_PER_LESSON = 10;
+const FILE_LINK_SECONDS = 300;
+const OFFICE_TYPES: Record<string, string> = {
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".odt": "application/vnd.oasis.opendocument.text",
+  ".odp": "application/vnd.oasis.opendocument.presentation",
+};
+
+const fileView = (f: LessonFile) => ({ file_id: f.fileId, file_name: f.fileName, mime: f.mime, size: f.size });
 
 const DAY_MS = 24 * 3600_000;
 const URL_FIELD = { type: "string", pattern: "^https?://", maxLength: 500 } as const;
@@ -37,7 +62,7 @@ const materials = {
 const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The lesson as students and teachers see it; the call link falls back to the group's. */
-export const lessonView = (l: Lesson, g: Group) => ({
+export const lessonView = (l: Lesson, g: Group, files: LessonFile[]) => ({
   lesson_id: l.lessonId,
   group_id: l.groupId,
   group_name: g.name,
@@ -50,6 +75,7 @@ export const lessonView = (l: Lesson, g: Group) => ({
   materials: l.materials,
   recording_url: l.recordingUrl,
   note: l.note,
+  files: files.filter((f) => f.lessonId === l.lessonId).map(fileView),
 });
 
 /** The lessons of the account's groups between two dates, with attendance: their own for a student, everyone's for a teacher. */
@@ -57,18 +83,19 @@ export async function lessonsFor(school: SchoolStore, a: Account, groups: Group[
   for (const g of groups) await school.lessons.sync(g, now);
   const lessons = await school.lessons.between(groups.map((g) => g.groupId), from, to);
   const byId = new Map(groups.map((g) => [g.groupId, g]));
+  const files = await school.lessons.files(lessons.map((l) => l.lessonId));
   if (a.role === "student") {
     const marks = await school.lessons.marks(lessons.map((l) => l.lessonId), a.accountId);
-    return lessons.map((l) => ({ ...lessonView(l, byId.get(l.groupId)!), attendance: (l.status === "held" && marks.find((m) => m.lessonId === l.lessonId)?.status) || null }));
+    return lessons.map((l) => ({ ...lessonView(l, byId.get(l.groupId)!, files), attendance: (l.status === "held" && marks.find((m) => m.lessonId === l.lessonId)?.status) || null }));
   }
   const marks = await school.lessons.marks(lessons.map((l) => l.lessonId));
   const members = new Map(await Promise.all(groups.map(async (g) => [g.groupId, await school.members(g.groupId)] as const)));
-  return lessons.map((l) => teacherLessonView(l, byId.get(l.groupId)!, members.get(l.groupId) ?? [], marks));
+  return lessons.map((l) => teacherLessonView(l, byId.get(l.groupId)!, members.get(l.groupId) ?? [], marks, files));
 }
 
-function teacherLessonView(l: Lesson, g: Group, members: Account[], marks: Mark[]) {
+function teacherLessonView(l: Lesson, g: Group, members: Account[], marks: Mark[], files: LessonFile[]) {
   return {
-    ...lessonView(l, g),
+    ...lessonView(l, g, files),
     attendance: members.map((m) => ({ account_id: m.accountId, name: m.name, status: marks.find((x) => x.lessonId === l.lessonId && x.accountId === m.accountId)?.status ?? null })),
   };
 }
@@ -144,7 +171,8 @@ export async function lessonRoutes(app: FastifyInstance, d: LessonDeps): Promise
     return g;
   };
 
-  const viewFor = async (l: Lesson, g: Group) => teacherLessonView(l, g, await school.members(g.groupId), await school.lessons.marks([l.lessonId]));
+  const viewFor = async (l: Lesson, g: Group) =>
+    teacherLessonView(l, g, await school.members(g.groupId), await school.lessons.marks([l.lessonId]), await school.lessons.files([l.lessonId]));
 
   /** The signed-in account's lessons: the last two months and the coming four weeks by default; `from`/`to` are Moscow dates. */
   app.get<{ Querystring: { from?: string; to?: string } }>("/school/lessons", { preHandler: d.requireAccount }, async (req) => {
@@ -266,4 +294,83 @@ export async function lessonRoutes(app: FastifyInstance, d: LessonDeps): Promise
       return { lesson: await viewFor((await school.lessons.lesson(own.lesson.lessonId))!, own.group) };
     },
   );
+
+  // ---------- Lesson files
+  const linkKey = new TextEncoder().encode(`lesson-file-link:${d.sessionSecret}`);
+
+  /** The file, if the account may open it: the group's teacher or one of its students. */
+  const visibleFile = async (fileId: string, a: Account): Promise<LessonFile | undefined> => {
+    const f = await school.lessons.file(fileId);
+    const l = f && (await school.lessons.lesson(f.lessonId));
+    const g = l && (await school.group(l.groupId));
+    if (!f || !g) return undefined;
+    return g.teacherId === a.accountId || (await school.isMember(g.groupId, a.accountId)) ? f : undefined;
+  };
+
+  // The body is the file itself, as with hand-ins: the teacher's phone streams it straight to storage.
+  await app.register(async (raw) => {
+    raw.removeAllContentTypeParsers();
+    raw.addContentTypeParser("*", (_req, payload, done) => done(null, payload));
+
+    raw.put<{ Params: { id: string }; Querystring: { name?: string } }>("/school/lessons/:id/files", { preHandler: d.requireTeacher }, async (req, reply) => {
+      const body = req.body as Readable | undefined;
+      const drain = () => body?.resume();
+      const own = await ownLesson(req, reply);
+      if (!own) return drain();
+      if ((await school.lessons.files([own.lesson.lessonId])).length >= MAX_FILES_PER_LESSON) {
+        return (drain(), reply.code(409).send({ error: "too_many", message: `К уроку можно приложить до ${MAX_FILES_PER_LESSON} файлов` }));
+      }
+      const fileName = basename(String(req.query.name ?? "file")).replace(/[\u0000-\u001f\u007f/\\]/g, "").slice(-120) || "file";
+      const ext = extname(fileName).toLowerCase();
+      const mime = d.acceptedType(req.headers["content-type"], fileName) ?? OFFICE_TYPES[ext];
+      if (!mime) return (drain(), reply.code(415).send({ error: "type", message: "Такой файл не принимается: нужен документ, презентация, таблица, PDF, фото, запись или видео" }));
+      if (Number(req.headers["content-length"] ?? 0) > MAX_LESSON_FILE_BYTES) return (drain(), reply.code(413).send({ error: "size", message: "Файл больше 50 МБ" }));
+      if (!body) return reply.code(400).send({ error: "empty", message: "Файл пустой" });
+      const key = `lessons/${own.lesson.lessonId}/${crypto.randomUUID()}${ext.slice(0, 8)}`;
+      let size: number;
+      try {
+        size = await d.files.put(key, body, MAX_LESSON_FILE_BYTES);
+      } catch (e) {
+        if (e instanceof FileTooLargeError) return reply.code(413).send({ error: "size", message: "Файл больше 50 МБ" });
+        throw e;
+      }
+      if (size === 0) {
+        await d.files.delete(key);
+        return reply.code(400).send({ error: "empty", message: "Файл пустой" });
+      }
+      await school.lessons.addFile({ lessonId: own.lesson.lessonId, fileKey: key, fileName, mime, size });
+      return reply.code(201).send({ lesson: await viewFor((await school.lessons.lesson(own.lesson.lessonId))!, own.group) });
+    });
+  });
+
+  app.delete<{ Params: { id: string; fileId: string } }>("/school/lessons/:id/files/:fileId", { preHandler: d.requireTeacher }, async (req, reply) => {
+    const own = await ownLesson(req, reply);
+    if (!own) return;
+    const f = await school.lessons.file(req.params.fileId);
+    if (!f || f.lessonId !== own.lesson.lessonId) return reply.code(404).send({ error: "no such file" });
+    await school.lessons.deleteFile(f.fileId);
+    await d.files.delete(f.fileKey).catch((e) => req.log.warn({ err: e }, "lesson file not deleted from storage"));
+    return { lesson: await viewFor(own.lesson, own.group) };
+  });
+
+  /** A link to the file for five minutes: the browser opens it like any download and keeps its name. */
+  app.post<{ Params: { fileId: string } }>("/school/lesson-files/:fileId/link", { preHandler: d.requireAccount }, async (req, reply) => {
+    if (!(await visibleFile(req.params.fileId, req.account!))) return reply.code(404).send({ error: "not found" });
+    const t = await new SignJWT({}).setProtectedHeader({ alg: "HS256" }).setSubject(req.params.fileId).setIssuedAt().setExpirationTime(`${FILE_LINK_SECONDS}s`).sign(linkKey);
+    return { url: `/school/lesson-files/${req.params.fileId}/file?t=${t}` };
+  });
+
+  app.get<{ Params: { fileId: string }; Querystring: { t?: string } }>("/school/lesson-files/:fileId/file", async (req, reply) => {
+    const claims = req.query.t ? await jwtVerify(req.query.t, linkKey, { algorithms: ["HS256"] }).catch(() => undefined) : undefined;
+    const f = claims?.payload.sub === req.params.fileId ? await school.lessons.file(req.params.fileId) : undefined;
+    if (!f) return reply.code(404).send({ error: "not found" });
+    const file = await d.files.open(f.fileKey);
+    if (!file) return reply.code(404).send({ error: "file missing" });
+    return reply
+      .type(f.mime)
+      .header("Content-Length", file.size)
+      .header("Content-Disposition", `attachment; filename="${f.fileName.replace(/[^\x20-\x7e]|["\\]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(f.fileName)}`)
+      .header("Cache-Control", "private, no-store")
+      .send(file.stream);
+  });
 }
