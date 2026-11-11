@@ -103,6 +103,7 @@ const groupFields = {
   name: { type: "string", minLength: 1, maxLength: 80 },
   call_url: { anyOf: [{ type: "string", pattern: "^https?://", maxLength: 500 }, { type: "null" }] },
   schedule: { type: "array", maxItems: 14, items: slot },
+  unit_access: { type: "string", enum: ["assigned", "course"] },
 } as const;
 
 interface NewAccountBody {
@@ -114,6 +115,7 @@ interface GroupBody {
   name?: string;
   call_url?: string | null;
   schedule?: Group["schedule"];
+  unit_access?: Group["unitAccess"];
 }
 
 const accountView = (a: Account) => ({ id: a.accountId, name: a.name, role: a.role, login: a.login });
@@ -157,7 +159,7 @@ export function weekStart(at: Date): Date {
 
 const moscowDate = (at: Date) => new Date(at.getTime() + MSK_MS).toISOString().slice(0, 10);
 
-const groupView = (g: Group) => ({ group_id: g.groupId, name: g.name, teacher_name: g.teacherName, call_url: g.callUrl, schedule: g.schedule });
+const groupView = (g: Group) => ({ group_id: g.groupId, name: g.name, teacher_name: g.teacherName, call_url: g.callUrl, schedule: g.schedule, unit_access: g.unitAccess });
 
 /**
  * The school platform's accounts and groups: teachers are created by the admin, students
@@ -507,7 +509,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     "/school/groups",
     { preHandler: requireTeacher, schema: { body: { type: "object", required: ["name"], additionalProperties: false, properties: groupFields } } },
     async (req, reply) => {
-      const g = await d.school.createGroup({ teacherId: req.account!.accountId, name: req.body.name.trim(), callUrl: req.body.call_url ?? null, schedule: req.body.schedule ?? [] });
+      const g = await d.school.createGroup({ teacherId: req.account!.accountId, name: req.body.name.trim(), callUrl: req.body.call_url ?? null, schedule: req.body.schedule ?? [], ...(req.body.unit_access ? { unitAccess: req.body.unit_access } : {}) });
       return reply.code(201).send({ group: groupView(g) });
     },
   );
@@ -521,6 +523,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
         ...(req.body.name !== undefined ? { name: req.body.name.trim() } : {}),
         ...(req.body.call_url !== undefined ? { callUrl: req.body.call_url } : {}),
         ...(req.body.schedule !== undefined ? { schedule: req.body.schedule } : {}),
+        ...(req.body.unit_access !== undefined ? { unitAccess: req.body.unit_access } : {}),
       });
       return { group: groupView(g!) };
     },

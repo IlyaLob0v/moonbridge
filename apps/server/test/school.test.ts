@@ -120,7 +120,7 @@ describe("groups and invitations", () => {
 
     const dash = (await app.inject({ url: "/school/dashboard", headers: auth(s) })).json();
     expect(dash.groups).toEqual([
-      { group_id: groupId, name: "A1 вечер", teacher_name: "Ксения", call_url: "https://telemost.yandex.ru/j/123", schedule: [{ weekday: 2, time: "18:30", minutes: 60 }, { weekday: 4, time: "18:30", minutes: 60 }] },
+      { group_id: groupId, name: "A1 вечер", teacher_name: "Ксения", call_url: "https://telemost.yandex.ru/j/123", schedule: [{ weekday: 2, time: "18:30", minutes: 60 }, { weekday: 4, time: "18:30", minutes: 60 }], unit_access: "assigned" },
     ]);
     expect(dash.homework).toMatchObject([{ homework_id: hw, title: "Расскажи о себе", needs_file: true, due_at: "2026-12-03T15:00:00.000Z", submission: null }]);
 
@@ -541,6 +541,19 @@ describe("a Moonbridge unit as homework", () => {
     await finishEpisode(app, anna, "articles_in_cafe", "A1_Articles_01", 1, 1, new Date(clock.getTime() + 60_000));
     const teacherView = (await app.inject({ url: "/school/dashboard", headers: auth(t) })).json().homework[0];
     expect(teacherView.submissions.map((s: { account_id: string }) => s.account_id)).toEqual([boris.account.id]);
+  });
+
+  it("lets the teacher choose how units open in the hotel: when given (the default) or in course order", async () => {
+    const app = await school();
+    const t = await teacher(app);
+    const { groupId, code } = await groupWithInvite(app, t);
+    const anna = (await joinGroup(app, code)).json();
+    expect((await app.inject({ url: "/school/dashboard", headers: auth(anna.token) })).json().groups[0].unit_access).toBe("assigned");
+    const patched = await app.inject({ method: "PATCH", url: `/school/groups/${groupId}`, headers: auth(t), payload: { unit_access: "course" } });
+    expect(patched.json().group.unit_access).toBe("course");
+    expect((await app.inject({ method: "PATCH", url: `/school/groups/${groupId}`, headers: auth(t), payload: { unit_access: "never" } })).statusCode).toBe(400);
+    const second = await app.inject({ method: "POST", url: "/school/groups", headers: auth(t), payload: { name: "B", unit_access: "course" } });
+    expect(second.json().group.unit_access).toBe("course");
   });
 
   it("refuses a unit that does not exist or has no episodes, a file for a unit, and a stranger as the student", async () => {

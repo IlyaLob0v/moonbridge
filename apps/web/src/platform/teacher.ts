@@ -72,10 +72,26 @@ function reviewQueue(queue: QueueItem[], d: TeacherDeps, rerender: () => void): 
   if (!queue.length) {
     return el("section", { class: "card review-queue", "data-queue": "0" }, el("h2", {}, "Проверка"), el("p", { class: "muted" }, "Всё сданное проверено."));
   }
+  // Unit results come with a suggested grade: the teacher can accept them all at once.
+  const units = queue.filter((s) => s.score);
+  const all = el("button", { type: "button", class: "primary", "data-confirm-all": String(units.length) }, `Подтвердить все предложенные оценки (${units.length})`) as HTMLButtonElement;
+  const allError = el("p", { class: "form-error", role: "alert" });
+  all.addEventListener("click", async () => {
+    if (!d.token) return;
+    all.disabled = true;
+    try {
+      for (const s of units) await d.api.review(d.token, s.submission_id, s.score!.suggested_grade, "");
+      rerender();
+    } catch (e) {
+      allError.textContent = messageOf(e);
+      all.disabled = false;
+    }
+  });
   return el(
     "section",
     { class: "card review-queue", "data-queue": String(queue.length) },
     el("h2", {}, `Проверка: ${queue.length}`),
+    ...(units.length > 1 ? [all, allError] : []),
     ...queue.map((s) => reviewItem(s, d, rerender)),
   );
 }
@@ -228,6 +244,7 @@ function groupCard(g: GroupView, dash: Dashboard, progress: GroupProgress | unde
     el("h2", {}, g.name),
     el("p", { class: "muted" }, scheduleText(g.schedule)),
     ...(g.call_url ? [el("p", { class: "muted" }, "Звонок: ", el("a", { href: g.call_url, target: "_blank", rel: "noopener" }, g.call_url))] : []),
+    unitAccessField(g, d),
     el("h3", { "data-members": String(members.length) }, `Ученики: ${members.length}`),
     progress ? studentsTable(progress) : el("p", {}, members.length ? members.map((m) => m.name).join(", ") : "Учеников пока нет"),
     inviteButton,
@@ -237,6 +254,31 @@ function groupCard(g: GroupView, dash: Dashboard, progress: GroupProgress | unde
     ...(homework.length ? homework.map((h) => homeworkItem(h, members.length, now, d)) : [el("p", { class: "muted" }, "Ещё ничего не задано.")]),
     newHomeworkForm(g, d, rerender),
   );
+}
+
+/** How units open in the hotel for this group: when the teacher gives them, or in course order by themselves. */
+function unitAccessField(g: GroupView, d: TeacherDeps): HTMLElement {
+  const select = el(
+    "select",
+    { class: "answer", name: "unit_access", "aria-label": "Юниты Moonbridge", "data-unit-access": g.group_id },
+    el("option", { value: "assigned", ...(g.unit_access === "assigned" ? { selected: "" } : {}) }, "открываются, когда я задаю их"),
+    el("option", { value: "course", ...(g.unit_access === "course" ? { selected: "" } : {}) }, "открываются сами по порядку курса"),
+  ) as HTMLSelectElement;
+  const note = el("span", { class: "muted", role: "status" });
+  select.addEventListener("change", async () => {
+    if (!d.token) return;
+    select.disabled = true;
+    try {
+      await d.api.updateGroup(d.token, g.group_id, { unit_access: select.value as GroupView["unit_access"] });
+      note.textContent = "Сохранено";
+    } catch (e) {
+      note.textContent = messageOf(e);
+      select.value = g.unit_access;
+    } finally {
+      select.disabled = false;
+    }
+  });
+  return el("label", { class: "unit-access" }, "Юниты Moonbridge", select, note);
 }
 
 function homeworkItem(h: HomeworkView, members: number, now: Date, d: TeacherDeps): HTMLElement {

@@ -117,6 +117,8 @@ export interface GroupView {
   teacher_name: string;
   call_url: string | null;
   schedule: SlotView[];
+  /** "assigned": a unit opens in the hotel when the teacher gives it as homework; "course": units open in course order by themselves. */
+  unit_access: "assigned" | "course";
   /** Teachers only. */
   members?: { id: string; name: string }[];
 }
@@ -282,6 +284,10 @@ export class Api {
 
   createGroup(token: string, group: NewGroup) {
     return this.json<{ group: GroupView }>("/school/groups", { method: "POST", body: JSON.stringify(group) }, token);
+  }
+
+  updateGroup(token: string, groupId: string, patch: Partial<NewGroup> & { unit_access?: GroupView["unit_access"] }) {
+    return this.json<{ group: GroupView }>(`/school/groups/${groupId}`, { method: "PATCH", body: JSON.stringify(patch) }, token);
   }
 
   createInvite(token: string, groupId: string) {

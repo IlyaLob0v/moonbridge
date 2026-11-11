@@ -30,3 +30,8 @@ CREATE TABLE episode_results (
   finished_at timestamptz NOT NULL
 );
 CREATE INDEX episode_results_player ON episode_results (player_id, module_id, finished_at);
+
+-- How a group's students get units in the hotel: 'assigned' = a unit opens when the teacher gives
+-- it as homework (the game follows the lessons); 'course' = units open one after another by
+-- themselves as the student plays.
+ALTER TABLE school_groups ADD COLUMN unit_access text NOT NULL DEFAULT 'assigned' CHECK (unit_access IN ('assigned', 'course'));

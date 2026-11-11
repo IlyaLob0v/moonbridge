@@ -134,7 +134,7 @@ export function planShift(i: ShiftInput): ShiftPlan | undefined {
 }
 
 /** Today's shift for this student, or undefined when the content has no daily loop. */
-export async function todaysShift(learner: Learner, state: MoonbridgeState): Promise<ShiftPlan | undefined> {
+export async function todaysShift(learner: Learner, state: MoonbridgeState, opened?: Set<string>): Promise<ShiftPlan | undefined> {
   const bundle = learner.bundle;
   const course = studentCourse(bundle);
   if (!bundle.moonbridge || !course) return undefined;
@@ -142,7 +142,7 @@ export async function todaysShift(learner: Learner, state: MoonbridgeState): Pro
   return planShift({
     bundle,
     course,
-    studiedUnits: hotelView(bundle.moonbridge, course, state).studiedUnits,
+    studiedUnits: hotelView(bundle.moonbridge, course, state, opened).studiedUnits,
     due: learner.repeats.due(now),
     day: learner.day(now),
     practiceDays: state.practice_days,

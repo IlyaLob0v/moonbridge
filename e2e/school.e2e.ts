@@ -73,6 +73,10 @@ async function main(): Promise<void> {
     const group = teacher.locator(".group").first();
     await group.waitFor();
     check(/вт и чт в 18:30/.test(await group.innerText()), "the group shows its schedule");
+    check((await group.getByLabel("Юниты Moonbridge").inputValue()) === "assigned", "units open when the teacher gives them, by default");
+    await group.getByLabel("Юниты Moonbridge").selectOption("course");
+    await group.getByText("Сохранено").waitFor();
+    check(true, "the teacher lets this group's units open in course order");
     await group.getByRole("button", { name: "Пригласить ученика" }).click();
     const inviteUrl = await group.locator(".invite-url").inputValue();
     check(inviteUrl.startsWith(`${WEB}/join/`), `the invitation link is ${inviteUrl}`);

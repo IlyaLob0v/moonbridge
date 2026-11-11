@@ -28,7 +28,11 @@ export interface Group {
   name: string;
   callUrl: string | null;
   schedule: Slot[];
+  /** "assigned": a unit opens in the hotel when the teacher gives it; "course": units open in course order by themselves. */
+  unitAccess: UnitAccess;
 }
+
+export type UnitAccess = "assigned" | "course";
 
 export interface Homework {
   homeworkId: string;
@@ -106,7 +110,7 @@ function newId(prefix: string, length = 16): string {
 }
 
 const ACCOUNT = "a.account_id, a.role, a.name, a.login, a.player_id";
-const GROUP = "g.group_id, g.teacher_id, t.name AS teacher_name, g.name, g.call_url, g.schedule";
+const GROUP = "g.group_id, g.teacher_id, t.name AS teacher_name, g.name, g.call_url, g.schedule, g.unit_access";
 const HOMEWORK =
   "h.homework_id, h.group_id, h.title, h.description, h.due_at, h.needs_file, h.module_id, h.account_id, (SELECT x.name FROM accounts x WHERE x.account_id = h.account_id) AS assignee_name, h.auto_grade, h.created_at";
 const SUBMISSION =
@@ -126,6 +130,7 @@ interface GroupRow {
   name: string;
   call_url: string | null;
   schedule: Slot[];
+  unit_access: UnitAccess;
 }
 interface HomeworkRow {
   homework_id: string;
@@ -165,6 +170,7 @@ const group = (r: GroupRow): Group => ({
   name: r.name,
   callUrl: r.call_url,
   schedule: r.schedule,
+  unitAccess: r.unit_access,
 });
 const homework = (r: HomeworkRow): Homework => ({
   homeworkId: r.homework_id,
@@ -227,26 +233,28 @@ export class SchoolStore {
     return rows.length > 0;
   }
 
-  async createGroup(g: { teacherId: string; name: string; callUrl: string | null; schedule: Slot[] }): Promise<Group> {
+  async createGroup(g: { teacherId: string; name: string; callUrl: string | null; schedule: Slot[]; unitAccess?: UnitAccess }): Promise<Group> {
     const groupId = newId("grp", 12);
-    await this.sql.query("INSERT INTO school_groups (group_id, teacher_id, name, call_url, schedule) VALUES ($1, $2, $3, $4, $5::jsonb)", [
+    await this.sql.query("INSERT INTO school_groups (group_id, teacher_id, name, call_url, schedule, unit_access) VALUES ($1, $2, $3, $4, $5::jsonb, $6)", [
       groupId,
       g.teacherId,
       g.name,
       g.callUrl,
       JSON.stringify(g.schedule),
+      g.unitAccess ?? "assigned",
     ]);
     return (await this.group(groupId))!;
   }
 
-  async updateGroup(groupId: string, g: { name?: string; callUrl?: string | null; schedule?: Slot[] }): Promise<Group | undefined> {
+  async updateGroup(groupId: string, g: { name?: string; callUrl?: string | null; schedule?: Slot[]; unitAccess?: UnitAccess }): Promise<Group | undefined> {
     await this.sql.query(
       `UPDATE school_groups SET
          name = COALESCE($2, name),
          call_url = CASE WHEN $3::boolean THEN $4 ELSE call_url END,
-         schedule = COALESCE($5::jsonb, schedule)
+         schedule = COALESCE($5::jsonb, schedule),
+         unit_access = COALESCE($6, unit_access)
        WHERE group_id = $1`,
-      [groupId, g.name ?? null, g.callUrl !== undefined, g.callUrl ?? null, g.schedule ? JSON.stringify(g.schedule) : null],
+      [groupId, g.name ?? null, g.callUrl !== undefined, g.callUrl ?? null, g.schedule ? JSON.stringify(g.schedule) : null, g.unitAccess ?? null],
     );
     return this.group(groupId);
   }

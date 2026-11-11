@@ -1,7 +1,7 @@
 import type { Learner } from "../core/learner.js";
 import { streakOf, todaysShift } from "../moonbridge/daily.js";
 import type { Dashboard, StudentReport } from "../net/api.js";
-import { hotelView, migrateState, studentCourse } from "../moonbridge/progress.js";
+import { hotelView, migrateState, openedUnits, studentCourse } from "../moonbridge/progress.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
 import { myWeekCard } from "./report.js";
@@ -43,9 +43,10 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
 
   if (bundle.moonbridge && course) {
     const state = migrateState(await d.kv.get("moonbridge"));
-    const view = hotelView(bundle.moonbridge, course, state);
+    const opened = d.school?.role === "student" ? openedUnits(d.school.dashboard) : undefined;
+    const view = hotelView(bundle.moonbridge, course, state, opened);
     const day = d.learner.day(now);
-    const shift = await todaysShift(d.learner, state);
+    const shift = await todaysShift(d.learner, state, opened);
     const shiftOpen = shift && !state.shift_days.includes(day) && (shift.lostAndFound.length > 0 || shift.guest);
     const streak = streakOf(state.practice_days, day).days;
     cards.push(
@@ -53,7 +54,7 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
         "a",
         { class: "card section-card moonbridge", href: "/moonbridge", "data-link": "", "data-section": "moonbridge" },
         el("h2", {}, "Moonbridge"),
-        el("p", {}, view.next ? `Hotel Hello ждёт: ${view.next.title.ru}` : "Все эпизоды пройдены, загляните в отель."),
+        el("p", {}, view.next ? `Hotel Hello ждёт: ${view.next.title.ru}` : view.byTeacher ? "Новые эпизоды откроет преподаватель, а смена в отеле ждёт каждый день." : "Все эпизоды пройдены, загляните в отель."),
         ...(shiftOpen ? [el("p", { "data-today-shift": "" }, `Смена в отеле: ${shift.lostAndFound.length ? `вещей в бюро находок: ${shift.lostAndFound.length}` : ""}${shift.lostAndFound.length && shift.guest ? ", " : ""}${shift.guest ? `гость дня ${shift.guest.template.name}` : ""}.`)] : []),
         ...(streak ? [el("p", { class: "muted" }, `Дней практики подряд: ${streak}`)] : []),
         el("span", { class: "card-action" }, "Открыть →"),

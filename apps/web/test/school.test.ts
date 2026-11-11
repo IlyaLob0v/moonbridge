@@ -4,7 +4,7 @@ import { nextLesson, openHomework, scheduleText, when } from "../src/platform/sc
 import { addDays } from "../src/platform/report.js";
 import { moscowInputToIso } from "../src/platform/teacher.js";
 
-const group = (schedule: GroupView["schedule"], name = "A1 вечер"): GroupView => ({ group_id: name, name, teacher_name: "Ксения", call_url: null, schedule });
+const group = (schedule: GroupView["schedule"], name = "A1 вечер"): GroupView => ({ group_id: name, name, teacher_name: "Ксения", call_url: null, schedule, unit_access: "assigned" });
 const TUE_THU = [
   { weekday: 2, time: "18:30", minutes: 60 },
   { weekday: 4, time: "18:30", minutes: 60 },
