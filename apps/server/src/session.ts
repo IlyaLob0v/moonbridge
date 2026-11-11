@@ -6,7 +6,7 @@ export interface Session {
   playerId: string;
   /** Doubles as xAPI context.registration. */
   registration: string;
-  account?: { id: string; role: "student" | "teacher" };
+  account?: { id: string; role: "student" | "teacher" | "admin" };
   lti?: {
     iss: string;
     clientId: string;

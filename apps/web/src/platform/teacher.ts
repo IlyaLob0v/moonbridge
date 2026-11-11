@@ -54,6 +54,12 @@ export async function renderTeacher(root: HTMLElement, d: TeacherDeps): Promise<
       newGroupForm(d, rerender, groups.length === 0),
       el(
         "section",
+        { class: "card finance-link" },
+        el("div", {}, el("h2", {}, "Оплаты"), el("p", { class: "muted" }, "Сколько уроков оплачено и проведено у каждого ученика. Оплаты вносит администратор.")),
+        el("a", { class: "button", href: "/teacher/finance", "data-link": "", "data-finance": "" }, "Открыть"),
+      ),
+      el(
+        "section",
         { class: "card content-link" },
         el("div", {}, el("h2", {}, "Каталог уроков"), el("p", { class: "muted" }, "Юниты Moonbridge: задать группе или ученику как домашку со сроком.")),
         el("a", { class: "button", href: "/teacher/catalog", "data-link": "", "data-catalog-link": "" }, "Открыть"),

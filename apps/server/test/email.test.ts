@@ -139,6 +139,16 @@ describe("reminders", () => {
     expect((await reminders().run(new Date("2026-12-01T16:30:00Z"))).sent).toBe(2);
   });
 
+  it("never reminds teachers or admins, even with an address and in a group", async () => {
+    const app = await school();
+    const { groupId } = await setup(app);
+    const admin = await app.inject({ method: "POST", url: "/admin/admins", headers: auth("admin-secret"), payload: { name: "Илья", login: "ilya@school.ru", password: "admin-123" } });
+    expect(admin.json().account).toMatchObject({ role: "admin", email: "ilya@school.ru" });
+    await sql.query("UPDATE accounts SET email = 'ksenia@school.ru' WHERE login = 'ksenia'");
+    await sql.query("INSERT INTO group_members (group_id, account_id) SELECT $1, account_id FROM accounts WHERE role <> 'student'", [groupId]);
+    expect((await reminders().run(new Date("2026-11-30T16:30:00Z"))).sent).toBe(0);
+  });
+
   it("reminds of a file homework 24 hours before it is due, unless it is handed in", async () => {
     const app = await school();
     const { t, groupId, code } = await setup(app);

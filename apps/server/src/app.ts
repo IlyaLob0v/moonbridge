@@ -138,6 +138,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   });
 
   if (d.school) {
+    const store = d.school.store;
     await schoolRoutes(app, {
       config: d.config,
       tokens: d.tokens,
@@ -147,7 +148,11 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       content: { live, ...(d.fetchSheet ? { fetch: d.fetchSheet } : {}) },
       ...(d.school.mail ? { mail: d.school.mail } : {}),
       ...(d.school.now ? { now: d.school.now } : {}),
-      ...(d.school.billing ? { billing: d.school.billing } : {}),
+      // Held lessons cost the student's price (school/finance.ts) unless a test passes its own billing.
+      billing: d.school.billing ?? {
+        charge: (accountId, lessonId, at, by) => store.finance.chargeLesson(accountId, lessonId, at, by),
+        uncharge: (accountId, lessonId) => store.finance.unchargeLesson(accountId, lessonId),
+      },
     });
   }
 

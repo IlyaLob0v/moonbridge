@@ -18,7 +18,7 @@ export interface TodayDeps {
   kv: KeyValue;
   now?: Date;
   /** A signed-in student's or teacher's school; undefined for guests and LMS launches. */
-  school?: { dashboard: Dashboard | undefined; role: "student" | "teacher"; onSignOut: () => void; week?: StudentReport; feedback?: HTMLElement; email?: HTMLElement };
+  school?: { dashboard: Dashboard | undefined; role: "student" | "teacher" | "admin"; onSignOut: () => void; week?: StudentReport; feedback?: HTMLElement; email?: HTMLElement };
 }
 
 /** The platform's home screen: what to do today, across courses and sections. */
@@ -31,6 +31,17 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
   // No address yet: asked first, before anything else on the screen.
   const askEmail = d.school?.email?.dataset.state === "missing";
   if (askEmail) cards.push(d.school!.email!);
+  if (d.school?.role === "admin") {
+    cards.push(
+      el(
+        "a",
+        { class: "card section-card teacher-card", href: "/finance", "data-link": "", "data-section": "finance" },
+        el("h2", {}, "Финансы школы"),
+        el("p", {}, "Цены уроков, оплаты учеников, долги."),
+        el("span", { class: "card-action" }, "Открыть →"),
+      ),
+    );
+  }
   if (d.school?.role === "teacher") {
     const groups = d.school.dashboard?.groups ?? [];
     const waiting = (d.school.dashboard?.homework ?? []).reduce((n, h) => n + (h.submissions ?? []).filter((s) => !s.review).length, 0);
