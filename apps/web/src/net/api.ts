@@ -5,7 +5,7 @@ import type { Snapshot } from "./backup.js";
 export interface AccountInfo {
   id: string;
   name: string;
-  role: "student" | "teacher";
+  role: "student" | "teacher" | "admin";
   login: string;
 }
 
@@ -147,7 +147,7 @@ export interface PilotMetrics {
 export interface FeedbackView {
   id: string;
   name: string;
-  role: "student" | "teacher";
+  role: "student" | "teacher" | "admin";
   page: string;
   message: string;
   user_agent: string;
@@ -308,6 +308,59 @@ export interface SheetResult {
 }
 
 /** A content sheet: a Google Sheets link or an .xlsx file. */
+/** Finances: a student's money in roubles, the price per lesson and the history. */
+export type PaymentMethod = "cash" | "transfer" | "card" | "online";
+export interface PaymentView {
+  payment_id: string;
+  account_id: string;
+  amount_rub: number;
+  currency: string;
+  method: PaymentMethod;
+  status: "pending" | "succeeded" | "canceled";
+  paid_on: string;
+  note: string;
+  voided: boolean;
+}
+export interface LedgerEntryView {
+  entry_id: string;
+  /** Roubles: + for a payment, − for a held lesson (its price) or a voided payment, ± for a correction; null for a lesson without a price yet. */
+  amount_rub: number | null;
+  kind: "payment" | "void" | "lesson" | "correction";
+  at: string;
+  note: string;
+  lesson_id: string | null;
+  by: string | null;
+  payment: { payment_id: string; method: PaymentMethod; voided: boolean } | null;
+}
+export interface MoneySummary {
+  price_rub: number | null;
+  /** Paid minus held, plus corrections; below zero is a debt. */
+  balance_rub: number;
+  /** Whole lessons the balance pays for at the price; null without a price. */
+  lessons_left: number | null;
+  paid_rub: number;
+  lessons_held: number;
+  held_rub: number;
+  /** Held lessons waiting for a price. */
+  unpriced: number;
+  last_paid_on: string | null;
+}
+export interface StudentBalance extends MoneySummary {
+  student: { id: string; name: string };
+  entries: LedgerEntryView[];
+}
+export interface FinanceOverview {
+  month: { from: string; received_rub: number; payments: number; lessons_held: number; held_rub: number };
+  total: { balance_rub: number; debt_rub: number };
+  students: ({ id: string; name: string; groups: string[] } & MoneySummary)[];
+}
+export interface NewPayment {
+  amount_rub: number;
+  method: Exclude<PaymentMethod, "online">;
+  paid_on?: string;
+  note?: string;
+}
+
 export type SheetInput = { url: string } | File;
 
 export class Api {
@@ -422,6 +475,38 @@ export class Api {
 
   review(token: string, submissionId: string, grade: number, comment: string) {
     return this.json<{ submission: SubmissionView }>(`/school/submissions/${submissionId}/review`, { method: "POST", body: JSON.stringify({ grade, comment }) }, token);
+  }
+
+  /** The teacher's students, read only. */
+  finance(token: string) {
+    return this.json<FinanceOverview>("/school/finance", {}, token);
+  }
+
+  /** Every student of the school, for the admin, who alone changes prices and payments. */
+  adminFinance(token: string) {
+    return this.json<FinanceOverview>("/admin/finance", {}, token);
+  }
+
+  /** A student's balance and its history; a student asks for their own. */
+  studentBalance(token: string, accountId: string) {
+    return this.json<StudentBalance>(`/school/students/${accountId}/balance`, {}, token);
+  }
+
+  setPrice(token: string, accountId: string, priceRub: number) {
+    return this.json<MoneySummary>(`/admin/students/${accountId}/price`, { method: "PUT", body: JSON.stringify({ price_rub: priceRub }) }, token);
+  }
+
+  addPayment(token: string, accountId: string, payment: NewPayment) {
+    return this.json<MoneySummary & { payment: PaymentView }>(`/admin/students/${accountId}/payments`, { method: "POST", body: JSON.stringify(payment) }, token);
+  }
+
+  voidPayment(token: string, paymentId: string, reason: string) {
+    return this.json<MoneySummary & { payment: PaymentView }>(`/admin/payments/${paymentId}/void`, { method: "POST", body: JSON.stringify({ reason }) }, token);
+  }
+
+  /** Money added (+) or taken (−) by hand, in roubles or in lessons at the student's price. */
+  addCorrection(token: string, accountId: string, change: { amount_rub: number } | { lessons: number }, note: string) {
+    return this.json<MoneySummary>(`/admin/students/${accountId}/corrections`, { method: "POST", body: JSON.stringify({ ...change, note }) }, token);
   }
 
   resetPassword(token: string, accountId: string) {

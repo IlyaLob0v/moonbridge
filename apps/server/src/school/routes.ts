@@ -6,6 +6,7 @@ import type { LiveContent } from "../content/live.js";
 import { sheetRoutes } from "../content/routes.js";
 import type { ServerConfig } from "../config.js";
 import type { Session, SessionTokens } from "../session.js";
+import { financeRoutes } from "./finance-routes.js";
 import { FileTooLargeError, type FileStore } from "./files.js";
 import { dashboardLessons, lessonRoutes, weekAttendance, type LessonBilling } from "./lessons.js";
 import { FailureLimiter } from "./limits.js";
@@ -190,6 +191,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     if (!reply.sent && req.account?.role !== "teacher") return reply.code(403).send({ error: "teachers only" });
   };
 
+  await financeRoutes(app, { config: d.config, school: d.school, requireAccount, requireTeacher, now });
   await lessonRoutes(app, {
     school: d.school,
     now,
@@ -244,6 +246,15 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     return a && reply.code(201).send({ account: accountView(a) });
   });
 
+  /** The admin's own account, to handle the school's money from the platform instead of curl. */
+  app.post<{ Body: NewAccountBody }>("/admin/admins", { schema: { body: newAccount } }, async (req, reply) => {
+    if (!d.config.adminToken || req.headers.authorization !== `Bearer ${d.config.adminToken}`) {
+      return reply.code(d.config.adminToken ? 401 : 403).send({ error: "admin token required" });
+    }
+    const a = await createAccount("admin", req.body, reply);
+    return a && reply.code(201).send({ account: accountView(a) });
+  });
+
   // Password guessing: 5 wrong passwords for one login, or 30 from one address, in 15 minutes, then a pause.
   const clock = () => now().getTime();
   const loginFailures = new FailureLimiter(5, 15 * 60_000, clock);
@@ -286,7 +297,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     if (!g) return reply.code(404).send({ error: "invite", message: "Приглашение не найдено или устарело" });
     const session = await sessionOf(req);
     let account = session?.account ? await d.school.accountById(session.account.id) : undefined;
-    if (account?.role === "teacher") return reply.code(409).send({ error: "teacher", message: "Преподаватель не может вступить в группу как ученик" });
+    if (account && account.role !== "student") return reply.code(409).send({ error: "teacher", message: "Преподаватель или админ не может вступить в группу как ученик" });
     if (!account) {
       const body = req.body ?? {};
       const valid =

@@ -7,6 +7,7 @@ import { loadDashboard, renderHomework } from "./platform/school.js";
 import { renderStudentReport } from "./platform/report.js";
 import { renderCatalog } from "./platform/catalog.js";
 import { renderContent } from "./platform/content.js";
+import { renderFinance } from "./platform/finance.js";
 import { feedbackBox } from "./platform/feedback.js";
 import { openLessonFile, renderGroupLessons, renderStudentLessons } from "./platform/lessons.js";
 import { renderMetrics } from "./platform/metrics.js";
@@ -161,6 +162,8 @@ async function boot(): Promise<void> {
     const lessonsGroup = /^\/teacher\/lessons\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (lessonsGroup && session.account?.role === "teacher") return renderGroupLessons(root, lessonsGroup, { api, token: session.token });
     if (path === "/teacher" && session.account?.role === "teacher") return renderTeacher(root, { api, token: session.token, kv: local });
+    if (path === "/teacher/finance" && session.account?.role === "teacher") return renderFinance(root, { api, token: session.token, mode: "teacher" });
+    if (path === "/finance" && session.account?.role === "admin") return renderFinance(root, { api, token: session.token, mode: "admin" });
     if (path === "/teacher/content" && session.account?.role === "teacher") return renderContent(root, { api, token: session.token, kv: local });
     if (path === "/teacher/catalog" && session.account?.role === "teacher") return renderCatalog(root, { api, token: session.token, kv: local, navigate });
     const metricsGroup = /^\/teacher\/metrics\/([A-Za-z0-9_]+)$/.exec(path)?.[1];

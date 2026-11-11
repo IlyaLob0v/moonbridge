@@ -1,9 +1,11 @@
 import type { Attempt, EpisodeResult } from "@moonbridge/xapi";
 import type { Sql } from "../db/sql.js";
+import { FinanceStore } from "./finance.js";
 import { LessonStore } from "./lesson-store.js";
 import type { MetricAttempt } from "./metrics.js";
 
-export type Role = "student" | "teacher";
+/** An admin handles the school's money (school/finance-routes.ts); created with the admin token. */
+export type Role = "student" | "teacher" | "admin";
 
 export interface Account {
   accountId: string;
@@ -205,10 +207,13 @@ const submission = (r: SubmissionRow): Submission => ({
  * in the routes; the store only reads and writes.
  */
 export class SchoolStore {
+  /** Lesson balances and payments (school/finance.ts). */
+  readonly finance: FinanceStore;
   /** Lessons and attendance (school/lesson-store.ts). */
   readonly lessons: LessonStore;
 
   constructor(private readonly sql: Sql) {
+    this.finance = new FinanceStore(sql);
     this.lessons = new LessonStore(sql);
   }
 
