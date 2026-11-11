@@ -7,6 +7,7 @@ import { sheetRoutes } from "../content/routes.js";
 import type { ServerConfig } from "../config.js";
 import type { Session, SessionTokens } from "../session.js";
 import { FileTooLargeError, type FileStore } from "./files.js";
+import { dashboardLessons, lessonRoutes, weekAttendance, type LessonBilling } from "./lessons.js";
 import { FailureLimiter } from "./limits.js";
 import { pilotMetrics } from "./metrics.js";
 import { DUMMY_HASH, hashPassword, verifyPassword } from "./passwords.js";
@@ -21,6 +22,8 @@ export interface SchoolDeps {
   errorLabel?: (errorTypeId: string) => string | undefined;
   /** The live content, which teachers may replace from the content sheet. */
   content?: { live: LiveContent; fetch?: typeof fetch };
+  /** Charges a held lesson to the student's balance (school finances); without it lessons are not billed. */
+  billing?: LessonBilling;
   now?: () => Date;
 }
 
@@ -175,6 +178,17 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     if (!reply.sent && req.account?.role !== "teacher") return reply.code(403).send({ error: "teachers only" });
   };
 
+  await lessonRoutes(app, {
+    school: d.school,
+    now,
+    requireAccount,
+    requireTeacher,
+    files: d.files,
+    sessionSecret: d.config.sessionSecret,
+    acceptedType,
+    ...(d.billing ? { billing: d.billing } : {}),
+  });
+
   if (d.content) await sheetRoutes(app, { live: d.content.live, requireTeacher, accountId: (req) => req.account!.accountId, ...(d.content.fetch ? { fetch: d.content.fetch } : {}) });
 
   /** The group, if the signed-in teacher runs it. */
@@ -287,6 +301,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
         account: accountView(a),
         groups: await Promise.all(groups.map(async (g) => ({ ...groupView(g), members: (await d.school.members(g.groupId)).map((m) => ({ id: m.accountId, name: m.name })) }))),
         homework: homework.map((h) => ({ ...homeworkView(h), submissions: submissions.filter((s) => s.homeworkId === h.homeworkId).map(submissionView) })),
+        lessons: await dashboardLessons(d.school, a, groups, now()),
       };
     }
     const mine = await d.school.submissionsFor(ids, a.accountId);
@@ -297,6 +312,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
         const s = mine.find((x) => x.homeworkId === h.homeworkId);
         return { ...homeworkView(h), submission: s ? submissionView(s) : null };
       }),
+      lessons: await dashboardLessons(d.school, a, groups, now()),
     };
   });
 
@@ -341,6 +357,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
         name: m.name,
         week: practiceView(await d.school.practice(m.playerId, from, to)),
         homework_open: homework.filter((h) => !handedIn.some((s) => s.homeworkId === h.homeworkId && s.accountId === m.accountId)).length,
+        lessons: await weekAttendance(d.school, m, [g], from, to, now()).then(({ held, present, absent }) => ({ held, present, absent })),
       })),
     );
     return { week: { from: moscowDate(from), to: moscowDate(new Date(to.getTime() - DAY_MS)) }, students };
@@ -374,6 +391,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
         const s = mine.find((x) => x.homeworkId === h.homeworkId);
         return { ...homeworkView(h), submission: s ? submissionView(s) : null };
       }),
+      lessons: await weekAttendance(d.school, student, groups, from, to, now()),
     };
   });
 
