@@ -61,3 +61,8 @@ CREATE INDEX balance_by_account ON balance_entries (account_id, at);
 CREATE UNIQUE INDEX balance_lesson_once ON balance_entries (account_id, lesson_id) WHERE kind = 'lesson';
 -- A payment reaches the ledger once, and is voided once.
 CREATE UNIQUE INDEX balance_payment_once ON balance_entries (payment_id, kind) WHERE payment_id IS NOT NULL;
+
+-- Who handles the money: an admin account (the school's owner), created with the admin token.
+-- Prices, payments, voids and corrections are the admin's; teachers only read them.
+ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_role_check;
+ALTER TABLE accounts ADD CONSTRAINT accounts_role_check CHECK (role IN ('student', 'teacher', 'admin'));

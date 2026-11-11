@@ -4,7 +4,8 @@ import { FinanceStore } from "./finance.js";
 import { LessonStore } from "./lesson-store.js";
 import type { MetricAttempt } from "./metrics.js";
 
-export type Role = "student" | "teacher";
+/** An admin handles the school's money (school/finance-routes.ts); created with the admin token. */
+export type Role = "student" | "teacher" | "admin";
 
 export interface Account {
   accountId: string;

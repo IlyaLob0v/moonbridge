@@ -5,7 +5,7 @@ import type { Snapshot } from "./backup.js";
 export interface AccountInfo {
   id: string;
   name: string;
-  role: "student" | "teacher";
+  role: "student" | "teacher" | "admin";
   login: string;
 }
 
@@ -147,7 +147,7 @@ export interface PilotMetrics {
 export interface FeedbackView {
   id: string;
   name: string;
-  role: "student" | "teacher";
+  role: "student" | "teacher" | "admin";
   page: string;
   message: string;
   user_agent: string;
@@ -477,8 +477,14 @@ export class Api {
     return this.json<{ submission: SubmissionView }>(`/school/submissions/${submissionId}/review`, { method: "POST", body: JSON.stringify({ grade, comment }) }, token);
   }
 
+  /** The teacher's students, read only. */
   finance(token: string) {
     return this.json<FinanceOverview>("/school/finance", {}, token);
+  }
+
+  /** Every student of the school, for the admin, who alone changes prices and payments. */
+  adminFinance(token: string) {
+    return this.json<FinanceOverview>("/admin/finance", {}, token);
   }
 
   /** A student's balance and its history; a student asks for their own. */
@@ -487,20 +493,20 @@ export class Api {
   }
 
   setPrice(token: string, accountId: string, priceRub: number) {
-    return this.json<MoneySummary>(`/school/students/${accountId}/price`, { method: "PUT", body: JSON.stringify({ price_rub: priceRub }) }, token);
+    return this.json<MoneySummary>(`/admin/students/${accountId}/price`, { method: "PUT", body: JSON.stringify({ price_rub: priceRub }) }, token);
   }
 
   addPayment(token: string, accountId: string, payment: NewPayment) {
-    return this.json<MoneySummary & { payment: PaymentView }>(`/school/students/${accountId}/payments`, { method: "POST", body: JSON.stringify(payment) }, token);
+    return this.json<MoneySummary & { payment: PaymentView }>(`/admin/students/${accountId}/payments`, { method: "POST", body: JSON.stringify(payment) }, token);
   }
 
   voidPayment(token: string, paymentId: string, reason: string) {
-    return this.json<MoneySummary & { payment: PaymentView }>(`/school/payments/${paymentId}/void`, { method: "POST", body: JSON.stringify({ reason }) }, token);
+    return this.json<MoneySummary & { payment: PaymentView }>(`/admin/payments/${paymentId}/void`, { method: "POST", body: JSON.stringify({ reason }) }, token);
   }
 
   /** Money added (+) or taken (−) by hand, in roubles or in lessons at the student's price. */
   addCorrection(token: string, accountId: string, change: { amount_rub: number } | { lessons: number }, note: string) {
-    return this.json<MoneySummary>(`/school/students/${accountId}/corrections`, { method: "POST", body: JSON.stringify({ ...change, note }) }, token);
+    return this.json<MoneySummary>(`/admin/students/${accountId}/corrections`, { method: "POST", body: JSON.stringify({ ...change, note }) }, token);
   }
 
   resetPassword(token: string, accountId: string) {

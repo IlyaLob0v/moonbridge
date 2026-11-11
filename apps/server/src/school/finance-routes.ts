@@ -3,10 +3,12 @@ import type { ServerConfig } from "../config.js";
 import { PaymentNotVoidableError, type LedgerEntry, type Payment, type PaymentMethod, type Summary } from "./finance.js";
 import type { Account, SchoolStore } from "./store.js";
 
-// Finances: the teacher sets each student's price per lesson and records the payments that
-// come by cash, transfer or card (the admin can too, with the admin token). Every held lesson
-// costs the price (the lessons' attendance calls FinanceStore.chargeLesson). The student sees
-// the same totals and history. Online payment (YooKassa) will add payments in the same table.
+// Finances. Only the admin handles money: an admin account signed in to the platform, or the
+// admin token with curl. The admin sets each student's price per lesson, records the payments
+// that come by cash, transfer or card, voids mistakes and makes corrections. Every held lesson
+// costs the price by itself (the lessons' attendance calls FinanceStore.chargeLesson).
+// Teachers see their students' totals and history but change nothing; a student sees their
+// own. Online payment (YooKassa) will add payments in the same table.
 
 export interface FinanceDeps {
   config: ServerConfig;
@@ -82,54 +84,23 @@ const summaryView = (s: Summary) => ({
 
 export async function financeRoutes(app: FastifyInstance, d: FinanceDeps): Promise<void> {
   const finance = d.school.finance;
-  const isAdmin = (req: FastifyRequest) => Boolean(d.config.adminToken) && req.headers.authorization === `Bearer ${d.config.adminToken}`;
+  const isAdminToken = (req: FastifyRequest) => Boolean(d.config.adminToken) && req.headers.authorization === `Bearer ${d.config.adminToken}`;
+  /** The admin token (curl), or a signed-in admin account. */
   const requireAdmin = async (req: FastifyRequest, reply: FastifyReply) => {
-    if (!isAdmin(req)) return reply.code(d.config.adminToken ? 401 : 403).send({ error: "admin token required" });
+    if (isAdminToken(req)) return;
+    await d.requireAccount(req, reply);
+    if (!reply.sent && req.account?.role !== "admin") return reply.code(403).send({ error: "admins only" });
+  };
+  /** Who made a change: the admin's account, or null for the admin token. */
+  const by = (req: FastifyRequest) => req.account?.accountId ?? null;
+
+  const student = async (studentId: string): Promise<Account | undefined> => {
+    const a = await d.school.accountById(studentId);
+    return a?.role === "student" ? a : undefined;
   };
 
-  /** A student the signed-in teacher teaches. */
-  const ownStudent = async (req: FastifyRequest, studentId: string): Promise<Account | undefined> => {
-    const student = await d.school.accountById(studentId);
-    if (!student || student.role !== "student") return undefined;
-    return (await d.school.teaches(req.account!.accountId, student.accountId)) ? student : undefined;
-  };
-  const anyStudent = async (studentId: string): Promise<Account | undefined> => {
-    const student = await d.school.accountById(studentId);
-    return student?.role === "student" ? student : undefined;
-  };
-
-  /** Validates the body and records the payment; undefined when the reply has already been sent. */
-  const record = async (req: FastifyRequest<{ Body: PaymentBody }>, reply: FastifyReply, student: Account, recordedBy: string | null) => {
-    const b = req.body;
-    const kop = toKop(b.amount_rub);
-    if (kop === undefined) return void reply.code(400).send({ error: "amount", message: "Сумма: рубли и не больше двух знаков копеек" });
-    const today = moscowDate(d.now());
-    const paidOn = b.paid_on ?? today;
-    if (Number.isNaN(Date.parse(`${paidOn}T00:00:00Z`)) || paidOn > today) return void reply.code(400).send({ error: "paid_on", message: "Дата оплаты не может быть в будущем" });
-    const p = await finance.recordPayment({ accountId: student.accountId, amountKop: kop, method: b.method, paidOn, note: (b.note ?? "").trim(), recordedBy });
-    return { payment: paymentView(p), ...summaryView(await finance.summary(student.accountId)) };
-  };
-
-  const setPrice = async (req: FastifyRequest<{ Body: { price_rub: number } }>, reply: FastifyReply, student: Account, by: string | null) => {
-    const kop = toKop(req.body.price_rub);
-    if (!kop) return void reply.code(400).send({ error: "price", message: "Цена: рубли и не больше двух знаков копеек" });
-    await finance.setPrice(student.accountId, kop, by);
-    return summaryView(await finance.summary(student.accountId));
-  };
-
-  /** Every student of the teacher's groups summed up, and the money of this month. */
-  app.get("/school/finance", { preHandler: d.requireTeacher }, async (req) => {
-    const groups = await d.school.groupsOf(req.account!);
-    const students = new Map<string, { id: string; name: string; groups: string[] }>();
-    for (const g of groups) {
-      for (const m of await d.school.members(g.groupId)) {
-        if (m.role !== "student") continue;
-        const s = students.get(m.accountId) ?? { id: m.accountId, name: m.name, groups: [] };
-        s.groups.push(g.name);
-        students.set(m.accountId, s);
-      }
-    }
-    const list = [...students.values()];
+  /** Students with their groups' names, each summed up, and the money of this month. */
+  const overview = async (list: { id: string; name: string; groups: string[] }[]) => {
     const ids = list.map((s) => s.id);
     const summaries = await finance.summaries(ids);
     const today = moscowDate(d.now());
@@ -145,41 +116,74 @@ export async function financeRoutes(app: FastifyInstance, d: FinanceDeps): Promi
       },
       students: list.map((s, i) => ({ ...s, ...summaryView(summaries[i]!) })),
     };
+  };
+
+  // ---------- Reading: the teacher (own students, read only), the student (themself), the admin (anyone)
+
+  app.get("/school/finance", { preHandler: d.requireTeacher }, async (req) => {
+    const students = new Map<string, { id: string; name: string; groups: string[] }>();
+    for (const g of await d.school.groupsOf(req.account!)) {
+      for (const m of await d.school.members(g.groupId)) {
+        if (m.role !== "student") continue;
+        const s = students.get(m.accountId) ?? { id: m.accountId, name: m.name, groups: [] };
+        s.groups.push(g.name);
+        students.set(m.accountId, s);
+      }
+    }
+    return overview([...students.values()]);
   });
 
-  /** A student's totals and history: for the student themself and for their teachers. */
   app.get<{ Params: { id: string } }>("/school/students/:id/balance", { preHandler: d.requireAccount }, async (req, reply) => {
     const a = req.account!;
-    const student = a.accountId === req.params.id && a.role === "student" ? a : a.role === "teacher" ? await ownStudent(req, req.params.id) : undefined;
-    if (!student) return reply.code(404).send({ error: "no such student" });
-    return {
-      student: { id: student.accountId, name: student.name },
-      ...summaryView(await finance.summary(student.accountId)),
-      entries: (await finance.ledger(student.accountId)).map(entryView),
-    };
+    const s = await student(req.params.id);
+    const visible = s && (a.role === "admin" || a.accountId === s.accountId || (a.role === "teacher" && (await d.school.teaches(a.accountId, s.accountId))));
+    if (!s || !visible) return reply.code(404).send({ error: "no such student" });
+    return { student: { id: s.accountId, name: s.name }, ...summaryView(await finance.summary(s.accountId)), entries: (await finance.ledger(s.accountId)).map(entryView) };
   });
 
-  app.put<{ Params: { id: string }; Body: { price_rub: number } }>("/school/students/:id/price", { preHandler: d.requireTeacher, schema: { body: priceBody } }, async (req, reply) => {
-    const student = await ownStudent(req, req.params.id);
-    if (!student) return reply.code(404).send({ error: "no such student" });
-    return setPrice(req, reply, student, req.account!.accountId);
+  // ---------- Changing: the admin only
+
+  app.get("/admin/finance", { preHandler: requireAdmin }, async () => {
+    const all = await finance.students();
+    const list = await Promise.all(
+      all.map(async (s) => {
+        const account = (await d.school.accountById(s.accountId))!;
+        return { id: s.accountId, name: s.name, login: s.login, groups: (await d.school.groupsOf(account)).map((g) => g.name) };
+      }),
+    );
+    return overview(list);
   });
 
-  app.post<{ Params: { id: string }; Body: PaymentBody }>("/school/students/:id/payments", { preHandler: d.requireTeacher, schema: { body: paymentBody } }, async (req, reply) => {
-    const student = await ownStudent(req, req.params.id);
-    if (!student) return reply.code(404).send({ error: "no such student" });
-    const done = await record(req, reply, student, req.account!.accountId);
-    return done && reply.code(201).send(done);
+  app.put<{ Params: { id: string }; Body: { price_rub: number } }>("/admin/students/:id/price", { preHandler: requireAdmin, schema: { body: priceBody } }, async (req, reply) => {
+    const s = await student(req.params.id);
+    if (!s) return reply.code(404).send({ error: "no such student" });
+    const kop = toKop(req.body.price_rub);
+    if (!kop) return reply.code(400).send({ error: "price", message: "Цена: рубли и не больше двух знаков копеек" });
+    await finance.setPrice(s.accountId, kop, by(req));
+    return summaryView(await finance.summary(s.accountId));
+  });
+
+  app.post<{ Params: { id: string }; Body: PaymentBody }>("/admin/students/:id/payments", { preHandler: requireAdmin, schema: { body: paymentBody } }, async (req, reply) => {
+    const s = await student(req.params.id);
+    if (!s) return reply.code(404).send({ error: "no such student" });
+    const b = req.body;
+    const kop = toKop(b.amount_rub);
+    if (kop === undefined) return reply.code(400).send({ error: "amount", message: "Сумма: рубли и не больше двух знаков копеек" });
+    const today = moscowDate(d.now());
+    const paidOn = b.paid_on ?? today;
+    if (Number.isNaN(Date.parse(`${paidOn}T00:00:00Z`)) || paidOn > today) return reply.code(400).send({ error: "paid_on", message: "Дата оплаты не может быть в будущем" });
+    const p = await finance.recordPayment({ accountId: s.accountId, amountKop: kop, method: b.method, paidOn, note: (b.note ?? "").trim(), recordedBy: by(req) });
+    return reply.code(201).send({ payment: paymentView(p), ...summaryView(await finance.summary(s.accountId)) });
   });
 
   app.post<{ Params: { id: string }; Body: { reason?: string } | undefined }>(
-    "/school/payments/:id/void",
-    { preHandler: d.requireTeacher, schema: { body: { type: "object", additionalProperties: false, properties: { reason: { type: "string", maxLength: 500 } } } } },
+    "/admin/payments/:id/void",
+    { preHandler: requireAdmin, schema: { body: { type: "object", additionalProperties: false, properties: { reason: { type: "string", maxLength: 500 } } } } },
     async (req, reply) => {
       const p = await finance.payment(req.params.id);
-      if (!p || !(await ownStudent(req, p.accountId))) return reply.code(404).send({ error: "no such payment" });
+      if (!p) return reply.code(404).send({ error: "no such payment" });
       try {
-        const voided = await finance.voidPayment(p.paymentId, req.account!.accountId, d.now(), (req.body?.reason ?? "").trim());
+        const voided = await finance.voidPayment(p.paymentId, by(req), d.now(), (req.body?.reason ?? "").trim());
         return { payment: paymentView(voided), ...summaryView(await finance.summary(p.accountId)) };
       } catch (e) {
         if (!(e instanceof PaymentNotVoidableError)) throw e;
@@ -190,9 +194,9 @@ export async function financeRoutes(app: FastifyInstance, d: FinanceDeps): Promi
 
   /** Money added or taken by hand, in roubles or in lessons at the current price, always with a reason the student sees. */
   app.post<{ Params: { id: string }; Body: { amount_rub?: number; lessons?: number; note: string } }>(
-    "/school/students/:id/corrections",
+    "/admin/students/:id/corrections",
     {
-      preHandler: d.requireTeacher,
+      preHandler: requireAdmin,
       schema: {
         body: {
           type: "object",
@@ -207,41 +211,21 @@ export async function financeRoutes(app: FastifyInstance, d: FinanceDeps): Promi
       },
     },
     async (req, reply) => {
-      const student = await ownStudent(req, req.params.id);
-      if (!student) return reply.code(404).send({ error: "no such student" });
+      const s = await student(req.params.id);
+      if (!s) return reply.code(404).send({ error: "no such student" });
       const note = req.body.note.trim();
       if (!note) return reply.code(400).send({ error: "note", message: "Напишите, за что начисление или списание" });
       const { amount_rub, lessons } = req.body;
       if ((amount_rub === undefined) === (lessons === undefined)) return reply.code(400).send({ error: "amount", message: "Укажите сумму или число уроков" });
       let kop: number | undefined;
       if (lessons !== undefined) {
-        const price = await finance.price(student.accountId);
+        const price = await finance.price(s.accountId);
         if (!price) return reply.code(409).send({ error: "price", message: "Сначала задайте цену урока" });
         kop = lessons * price;
       } else kop = toKop(amount_rub!);
       if (kop === undefined) return reply.code(400).send({ error: "amount", message: "Сумма: рубли и не больше двух знаков копеек" });
-      await finance.addCorrection({ accountId: student.accountId, amountKop: kop, note, by: req.account!.accountId, at: d.now() });
-      return reply.code(201).send(summaryView(await finance.summary(student.accountId)));
+      await finance.addCorrection({ accountId: s.accountId, amountKop: kop, note, by: by(req), at: d.now() });
+      return reply.code(201).send(summaryView(await finance.summary(s.accountId)));
     },
   );
-
-  // ---------- Admin (curl with the admin token): every student, prices and payments for anyone
-  app.get("/admin/finance", { preHandler: requireAdmin }, async () => {
-    const students = await finance.students();
-    const summaries = await finance.summaries(students.map((s) => s.accountId));
-    return { students: students.map((s, i) => ({ id: s.accountId, name: s.name, login: s.login, ...summaryView(summaries[i]!) })) };
-  });
-
-  app.put<{ Params: { id: string }; Body: { price_rub: number } }>("/admin/students/:id/price", { preHandler: requireAdmin, schema: { body: priceBody } }, async (req, reply) => {
-    const student = await anyStudent(req.params.id);
-    if (!student) return reply.code(404).send({ error: "no such student" });
-    return setPrice(req, reply, student, null);
-  });
-
-  app.post<{ Params: { id: string }; Body: PaymentBody }>("/admin/students/:id/payments", { preHandler: requireAdmin, schema: { body: paymentBody } }, async (req, reply) => {
-    const student = await anyStudent(req.params.id);
-    if (!student) return reply.code(404).send({ error: "no such student" });
-    const done = await record(req, reply, student, null);
-    return done && reply.code(201).send(done);
-  });
 }

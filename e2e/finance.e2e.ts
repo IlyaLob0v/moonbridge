@@ -1,10 +1,11 @@
 // End-to-end check of the finances, on phone screens (390 × 844):
 //
-//   a teacher and a group with two students exist (made through the gateway) → the teacher
-//   opens "Оплаты" from the cabinet, sets Анна's price per lesson, records her payment (the
-//   form shows how many lessons it pays for) and adds a free trial lesson by hand → a lesson
-//   is held and Анна marked present: it costs her price by itself → Борис gets a payment by
-//   mistake, which is voided → the totals on top: held, paid, left; the month's total →
+//   a teacher, an admin and a group with two students exist (made through the gateway) →
+//   the admin opens "Финансы школы" from Today, sets Анна's price per lesson, records her
+//   payment (the form shows how many lessons it pays for) and adds a free trial lesson by
+//   hand → a lesson is held and Анна marked present: it costs her price by itself → Борис
+//   gets a payment by mistake, which is voided → the totals on top: held, paid, left; the
+//   month's total → the teacher sees "Оплаты" read only: the same numbers, no forms →
 //   Анна signs in on her phone and sees the same totals, her held lessons and her payments;
 //   Борис, with nothing paid, is asked to pay.
 //
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
   step("Gateway, the built platform, a teacher with two students");
   await startServers({ ADMIN_TOKEN: ADMIN });
   await api("/admin/teachers", { token: ADMIN, body: { name: "Ксения", login: "ksenia", password: "teach-123" } });
+  await api("/admin/admins", { token: ADMIN, body: { name: "Илья", login: "ilya", password: "admin-123" } });
   const t = (await api<{ token: string }>("/auth/login", { body: { login: "ksenia", password: "teach-123" } })).token;
   const groupId = (await api<{ group: { group_id: string } }>("/school/groups", { token: t, body: { name: "A1 вечер" } })).group.group_id;
   const code = (await api<{ code: string }>(`/school/groups/${groupId}/invites`, { token: t, body: {} })).code;
@@ -66,11 +68,10 @@ async function main(): Promise<void> {
   };
 
   try {
-    step("The teacher sets a price and records payments");
+    step("The admin sets a price and records payments");
     const teacher = await open();
-    await signIn(teacher, "ksenia", "teach-123");
-    await teacher.locator('[data-section="teacher"]').click();
-    await teacher.locator("[data-finance]").click();
+    await signIn(teacher, "ilya", "admin-123");
+    await teacher.locator('[data-section="finance"]').click();
     const annaRow = teacher.locator(".finance-student", { hasText: "Анна" });
     const boris = teacher.locator(".finance-student", { hasText: "Борис" });
     await annaRow.waitFor();
@@ -106,7 +107,7 @@ async function main(): Promise<void> {
     await annaRow.locator('[data-list="lessons"]').waitFor();
     check((await annaRow.locator("[data-held]").innerText()).match(/1 урок · 1\s500\s₽/) !== null, "the held lesson cost her price by itself");
     check((await annaRow.locator("[data-left]").innerText()).match(/12\s000\s₽ · 8 уроков/) !== null, "on top: 13 500 ₽ in, 1 500 ₽ held, 12 000 ₽ = 8 lessons left");
-    await teacher.screenshot({ path: `${ARTIFACTS}finance-teacher.png`, fullPage: true });
+    await teacher.screenshot({ path: `${ARTIFACTS}finance-admin.png`, fullPage: true });
     check(await noSideScroll(teacher), "the finance page fits the phone");
 
     await boris.locator("summary").click();
@@ -121,6 +122,19 @@ async function main(): Promise<void> {
 
     const month = await teacher.locator("[data-month]").innerText();
     check(/12\s000\s₽ · оплат 1/.test(month) && /1 урок · 1\s500\s₽/.test(month), "the month: Анна's payment received, one lesson held");
+
+    step("The teacher sees it read only");
+    const cabinet = await open();
+    await signIn(cabinet, "ksenia", "teach-123");
+    await cabinet.locator('[data-section="teacher"]').click();
+    await cabinet.locator("[data-finance]").click();
+    const annaT = cabinet.locator(".finance-student", { hasText: "Анна" });
+    await annaT.locator('[data-badge="8"]').waitFor();
+    await annaT.locator("summary").click();
+    await annaT.locator('[data-list="lessons"]').waitFor();
+    check((await cabinet.locator("[data-form]").count()) === 0 && (await cabinet.locator("[data-void]").count()) === 0, "the teacher has no price, payment, void or correction controls");
+    check((await cabinet.locator("[data-readonly]").count()) === 1, "and is told that the admin enters payments");
+    await cabinet.screenshot({ path: `${ARTIFACTS}finance-teacher.png`, fullPage: true });
 
     step("Анна sees her account");
     const phone = await open();

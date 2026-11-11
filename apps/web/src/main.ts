@@ -162,7 +162,8 @@ async function boot(): Promise<void> {
     const lessonsGroup = /^\/teacher\/lessons\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (lessonsGroup && session.account?.role === "teacher") return renderGroupLessons(root, lessonsGroup, { api, token: session.token });
     if (path === "/teacher" && session.account?.role === "teacher") return renderTeacher(root, { api, token: session.token, kv: local });
-    if (path === "/teacher/finance" && session.account?.role === "teacher") return renderFinance(root, { api, token: session.token });
+    if (path === "/teacher/finance" && session.account?.role === "teacher") return renderFinance(root, { api, token: session.token, mode: "teacher" });
+    if (path === "/finance" && session.account?.role === "admin") return renderFinance(root, { api, token: session.token, mode: "admin" });
     if (path === "/balance" && session.account?.role === "student" && session.token) return renderBalance(root, { api, token: session.token, accountId: session.account.id });
     if (path === "/teacher/content" && session.account?.role === "teacher") return renderContent(root, { api, token: session.token, kv: local });
     if (path === "/teacher/catalog" && session.account?.role === "teacher") return renderCatalog(root, { api, token: session.token, kv: local, navigate });

@@ -55,7 +55,7 @@ export async function renderTeacher(root: HTMLElement, d: TeacherDeps): Promise<
       el(
         "section",
         { class: "card finance-link" },
-        el("div", {}, el("h2", {}, "Оплаты"), el("p", { class: "muted" }, "Баланс уроков учеников и журнал оплат.")),
+        el("div", {}, el("h2", {}, "Оплаты"), el("p", { class: "muted" }, "Сколько уроков оплачено и проведено у каждого ученика. Оплаты вносит администратор.")),
         el("a", { class: "button", href: "/teacher/finance", "data-link": "", "data-finance": "" }, "Открыть"),
       ),
       el(

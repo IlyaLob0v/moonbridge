@@ -11,6 +11,8 @@ const ROOT = new URL("..", import.meta.url).pathname;
 const GATEWAY = "http://localhost:8787";
 const ADMIN = "demo-admin-token";
 const TEACHER = { name: "Ксения", login: "ksenia", password: "teach-123" };
+/** Handles the money: prices and payments (Финансы школы). */
+const ADMIN_ACCOUNT = { name: "Илья", login: "ilya", password: "admin-123" };
 const STUDENTS = [
   { name: "Анна", login: "anna", password: "moon-123" },
   { name: "Борис", login: "boris", password: "moon-123" },
@@ -66,6 +68,7 @@ async function api<T>(path: string, init: { token?: string; body?: unknown } = {
 /** Accounts, a group and a homework; on a second run, whatever already exists is kept. */
 async function seed(): Promise<string> {
   await api("/admin/teachers", { token: ADMIN, body: TEACHER }); // 409 when it exists
+  await api("/admin/admins", { token: ADMIN, body: ADMIN_ACCOUNT }); // 409 when it exists
   const token = (await api<{ token: string }>("/auth/login", { body: { login: TEACHER.login, password: TEACHER.password } })).json.token;
   const dash = (await api<{ groups: { group_id: string; name: string }[] }>("/school/dashboard", { token })).json;
   let groupId = dash.groups.find((g) => g.name === GROUP)?.group_id;
@@ -108,6 +111,7 @@ async function main(): Promise<void> {
   С телефона в той же Wi-Fi: ${lan ? web : "(адрес в сети не найден, откройте с этого компьютера)"}
 
   Преподаватель:  ${TEACHER.login} / ${TEACHER.password}
+  Админ (финансы): ${ADMIN_ACCOUNT.login} / ${ADMIN_ACCOUNT.password}
   Ученики:        ${STUDENTS.map((s) => `${s.login} / ${s.password}`).join(",  ")}
   Новый ученик по приглашению: ${web}/join/${invite}
   Админ-токен (для curl): ${ADMIN}

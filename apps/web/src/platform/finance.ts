@@ -1,8 +1,9 @@
 import { ApiError, type Api, type FinanceOverview, type LedgerEntryView, type MoneySummary, type NewPayment, type PaymentMethod, type StudentBalance } from "../net/api.js";
 import { el } from "../ui/dom.js";
 
-// Finances: each student has a price per lesson; the teacher records payments by hand, and
-// every held lesson costs the price by itself (from the lessons' attendance). On top of each
+// Finances: each student has a price per lesson; the admin sets it and records payments by
+// hand, and every held lesson costs the price by itself (from the lessons' attendance). The
+// teacher sees the same pages read only. On top of each
 // page the totals: lessons held and what they cost, paid, and what is left (or owed). Below
 // it the held lessons and the payments.
 
@@ -158,19 +159,27 @@ export interface FinanceDeps {
   api: Api;
   token: string | undefined;
   now?: Date;
+  /** The admin changes prices and payments for every student; a teacher only reads their own. */
+  mode: "admin" | "teacher";
   /** The student whose card is open, after a change made in it. */
   open?: string;
 }
 
 export async function renderFinance(root: HTMLElement, d: FinanceDeps): Promise<void> {
-  const head = el("header", { class: "section-head" }, el("a", { href: "/teacher", "data-link": "", class: "back" }, "← Кабинет"), el("h1", {}, "Оплаты"));
+  const admin = d.mode === "admin";
+  const head = el(
+    "header",
+    { class: "section-head" },
+    admin ? el("a", { href: "/", "data-link": "", class: "back" }, "← Сегодня") : el("a", { href: "/teacher", "data-link": "", class: "back" }, "← Кабинет"),
+    el("h1", {}, admin ? "Финансы школы" : "Оплаты"),
+  );
   if (!d.token) {
     root.replaceChildren(el("div", { class: "finance" }, head, el("p", { class: "form-error" }, "Оплаты видны только при связи с сервером.")));
     return;
   }
   let f: FinanceOverview;
   try {
-    f = await d.api.finance(d.token);
+    f = admin ? await d.api.adminFinance(d.token) : await d.api.finance(d.token);
   } catch (e) {
     root.replaceChildren(el("div", { class: "finance" }, head, el("p", { class: "form-error" }, messageOf(e))));
     return;
@@ -189,7 +198,8 @@ export async function renderFinance(root: HTMLElement, d: FinanceDeps): Promise<
         el("div", { class: "total-row" }, el("span", {}, "Получено"), el("b", {}, `${rub(f.month.received_rub)} · оплат ${f.month.payments}`)),
         ...(f.total.debt_rub < 0 ? [el("div", { class: "total-row total-main owe", "data-debt": String(-f.total.debt_rub) }, el("span", {}, "Долг учеников"), el("b", {}, rub(-f.total.debt_rub)))] : []),
       ),
-      ...(f.students.length ? f.students.map((s) => studentRow(s, d, root)) : [el("p", { class: "muted" }, "Учеников пока нет: пригласите их в группу из кабинета.")]),
+      ...(admin ? [] : [el("p", { class: "muted", "data-readonly": "" }, "Цены и оплаты вносит администратор школы. Проведённые уроки списываются сами, когда вы отмечаете посещаемость.")]),
+      ...(f.students.length ? f.students.map((s) => studentRow(s, d, root)) : [el("p", { class: "muted" }, admin ? "Учеников пока нет." : "Учеников пока нет: пригласите их в группу из кабинета.")]),
     ),
   );
 }
@@ -220,15 +230,14 @@ function studentRow(s: FinanceOverview["students"][number], d: FinanceDeps, root
     body.replaceChildren(el("p", { class: "muted" }, "Загрузка…"));
     try {
       const b = await d.api.studentBalance(token, s.id);
+      const admin = d.mode === "admin";
       body.replaceChildren(
         totals(b),
-        priceForm(s.id, b.price_rub, d, changed),
-        paymentForm(s.id, b.price_rub, d, changed),
-        correctionForm(s.id, b.price_rub, d, changed),
+        ...(admin ? [priceForm(s.id, b.price_rub, d, changed), paymentForm(s.id, b.price_rub, d, changed), correctionForm(s.id, b.price_rub, d, changed)] : []),
         el("h3", {}, "Занятия"),
         lessonList(b.entries),
         el("h3", {}, "Оплаты"),
-        moneyList(b.entries, async (paymentId, button) => {
+        moneyList(b.entries, !admin ? undefined : async (paymentId, button) => {
           const reason = prompt("Отменить оплату? Сумма уйдёт из баланса. Причина (необязательно):");
           if (reason === null) return;
           button.disabled = true;
