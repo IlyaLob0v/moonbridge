@@ -223,7 +223,12 @@ details.new-homework summary { cursor: pointer; color: var(--accent); padding: 8
 .finance-form h3 { margin: 4px 0; }
 .correction summary { cursor: pointer; color: var(--accent); margin: 6px 0; }
 .ledger { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 6px; }
-.ledger li { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--edge); overflow-wrap: anywhere; }
-.ledger .delta { font-weight: 600; text-align: right; }
-.ledger .delta.plus { color: var(--good); }
-.ledger .delta.minus { color: var(--bad); }
+.ledger li { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--edge); overflow-wrap: anywhere; }
+.ledger .amount { font-weight: 600; text-align: right; white-space: nowrap; }
+.ledger .amount.plus { color: var(--good); }
+.totals .total-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 4px 0; }
+.totals .total-row b { text-align: right; }
+.totals .total-main { font-family: Georgia, serif; font-size: 22px; border-top: 1px solid var(--edge); margin-top: 4px; padding-top: 8px; }
+.totals .total-main.owe b { color: var(--bad); }
+.balance-badge.none { background: transparent; border: 1px solid var(--edge); color: var(--ink-dim); }
+.price-form .row { align-items: end; }

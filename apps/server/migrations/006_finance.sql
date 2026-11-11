@@ -1,16 +1,25 @@
--- Finances: a student's balance of paid lessons. The teacher (or the admin) records each
--- payment by hand; every held lesson takes one lesson off. The balance is the sum of the
--- ledger, never a stored number, so it can always be explained line by line.
+-- Finances: each student has a price per lesson; the teacher (or the admin) records the
+-- payments that come by hand, and every held lesson costs the student's price. The balance
+-- is in roubles and is the sum of the ledger, never a stored number, so it can always be
+-- explained line by line. Lessons left = balance / price.
 
--- One payment: how many lessons it buys and for how much. `provider` and `status` leave room
--- for online payment (YooKassa): such a payment arrives 'pending' with the provider's id and
--- adds lessons only when it becomes 'succeeded'. A manual payment is 'succeeded' at once.
+-- The student's price per lesson. A lesson keeps the price it was charged at, so a new price
+-- does not rewrite the past.
+CREATE TABLE lesson_prices (
+  account_id text PRIMARY KEY REFERENCES accounts (account_id) ON DELETE CASCADE,
+  price_kop bigint NOT NULL CHECK (price_kop > 0),
+  updated_by text REFERENCES accounts (account_id) ON DELETE SET NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- One payment. `provider` and `status` leave room for online payment (YooKassa): such a
+-- payment arrives 'pending' with the provider's id and reaches the ledger only when it becomes
+-- 'succeeded'. A manual payment is 'succeeded' at once.
 CREATE TABLE payments (
   payment_id text PRIMARY KEY,
   account_id text NOT NULL REFERENCES accounts (account_id) ON DELETE CASCADE,
-  lessons integer NOT NULL CHECK (lessons > 0),
   -- Kopecks: no floating point in money.
-  amount_kop bigint NOT NULL CHECK (amount_kop >= 0),
+  amount_kop bigint NOT NULL CHECK (amount_kop > 0),
   currency text NOT NULL DEFAULT 'RUB',
   method text NOT NULL CHECK (method IN ('cash', 'transfer', 'card', 'online')),
   provider text NOT NULL DEFAULT 'manual' CHECK (provider IN ('manual', 'yookassa')),
@@ -28,12 +37,13 @@ CREATE TABLE payments (
 );
 CREATE INDEX payments_by_account ON payments (account_id, paid_on);
 
--- The ledger, in lessons: +N for a payment, −N when it is voided, −1 for each held lesson,
--- ±N for a correction the teacher explains in the note.
+-- The ledger, in kopecks: +amount for a payment, −amount when it is voided, −price for each
+-- held lesson, ± for a correction the teacher explains in the note.
 CREATE TABLE balance_entries (
   entry_id text PRIMARY KEY,
   account_id text NOT NULL REFERENCES accounts (account_id) ON DELETE CASCADE,
-  delta integer NOT NULL CHECK (delta <> 0),
+  -- NULL only for a lesson held before the student had a price; setting the price fills it.
+  amount_kop bigint,
   kind text NOT NULL CHECK (kind IN ('payment', 'void', 'lesson', 'correction')),
   payment_id text REFERENCES payments (payment_id) ON DELETE CASCADE,
   -- The lesson this entry pays for (lessons live in their own table; no foreign key, so
@@ -43,10 +53,11 @@ CREATE TABLE balance_entries (
   at timestamptz NOT NULL,
   note text NOT NULL DEFAULT '',
   created_by text REFERENCES accounts (account_id) ON DELETE SET NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (amount_kop IS NOT NULL OR kind = 'lesson')
 );
 CREATE INDEX balance_by_account ON balance_entries (account_id, at);
 -- A lesson is charged once per student, however often its attendance is saved.
 CREATE UNIQUE INDEX balance_lesson_once ON balance_entries (account_id, lesson_id) WHERE kind = 'lesson';
--- A payment adds its lessons once, and is voided once.
+-- A payment reaches the ledger once, and is voided once.
 CREATE UNIQUE INDEX balance_payment_once ON balance_entries (payment_id, kind) WHERE payment_id IS NOT NULL;

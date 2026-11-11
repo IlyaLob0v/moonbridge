@@ -1,6 +1,6 @@
 import type { Learner } from "../core/learner.js";
 import { streakOf, todaysShift } from "../moonbridge/daily.js";
-import type { BalanceLineView, Dashboard, StudentReport } from "../net/api.js";
+import type { MoneySummary, Dashboard, StudentReport } from "../net/api.js";
 import { hotelView, migrateState, studentCourse } from "../moonbridge/progress.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
@@ -18,7 +18,7 @@ export interface TodayDeps {
   kv: KeyValue;
   now?: Date;
   /** A signed-in student's or teacher's school; undefined for guests and LMS launches. */
-  school?: { dashboard: Dashboard | undefined; role: "student" | "teacher"; onSignOut: () => void; week?: StudentReport; balance?: BalanceLineView; feedback?: HTMLElement };
+  school?: { dashboard: Dashboard | undefined; role: "student" | "teacher"; onSignOut: () => void; week?: StudentReport; balance?: MoneySummary; feedback?: HTMLElement };
 }
 
 /** The platform's home screen: what to do today, across courses and sections. */
