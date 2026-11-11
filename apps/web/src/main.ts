@@ -8,6 +8,7 @@ import { renderStudentReport } from "./platform/report.js";
 import { renderContent } from "./platform/content.js";
 import { emailCard } from "./platform/email.js";
 import { feedbackBox } from "./platform/feedback.js";
+import { openLessonFile, renderGroupLessons, renderStudentLessons } from "./platform/lessons.js";
 import { renderMetrics } from "./platform/metrics.js";
 import { renderTeacher } from "./platform/teacher.js";
 import { renderToday } from "./platform/today.js";
@@ -162,6 +163,9 @@ async function boot(): Promise<void> {
     }
     const homeworkId = /^\/homework\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (homeworkId && session.kind === "account") return renderHomework(root, homeworkId, { api, token: session.token, kv: local, navigate });
+    if (path === "/lessons" && session.kind === "account") return renderStudentLessons(root, { api, token: session.token, kv: local });
+    const lessonsGroup = /^\/teacher\/lessons\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
+    if (lessonsGroup && session.account?.role === "teacher") return renderGroupLessons(root, lessonsGroup, { api, token: session.token });
     if (path === "/teacher" && session.account?.role === "teacher") return renderTeacher(root, { api, token: session.token, kv: local });
     if (path === "/teacher/content" && session.account?.role === "teacher") return renderContent(root, { api, token: session.token, kv: local });
     const metricsGroup = /^\/teacher\/metrics\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
@@ -196,6 +200,12 @@ async function boot(): Promise<void> {
     cacheLoadedAssets();
   };
   document.addEventListener("click", (e) => {
+    const file = (e.target as Element | null)?.closest?.("a[data-lesson-file]") as HTMLAnchorElement | null;
+    if (file) {
+      e.preventDefault();
+      void openLessonFile(api, session.kind === "account" ? session.token : undefined, file.dataset.lessonFile!, file);
+      return;
+    }
     const a = (e.target as Element | null)?.closest?.("a[data-link]") as HTMLAnchorElement | null;
     if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey) return;
     e.preventDefault();
