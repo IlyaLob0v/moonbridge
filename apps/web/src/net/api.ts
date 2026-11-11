@@ -48,9 +48,62 @@ export interface PracticeView {
   last_answered_at: string | null;
 }
 
+/** Held lessons in a week and how many the student was present at or missed. */
+export interface AttendanceCount {
+  held: number;
+  present: number;
+  absent: number;
+}
+
 export interface GroupProgress {
   week: { from: string; to: string };
-  students: { id: string; name: string; week: PracticeView; homework_open: number }[];
+  students: { id: string; name: string; week: PracticeView; homework_open: number; lessons?: AttendanceCount }[];
+}
+
+export type LessonStatus = "planned" | "held" | "cancelled";
+export type AttendanceStatus = "present" | "absent";
+
+export interface LessonMaterial {
+  title: string;
+  url: string;
+}
+
+/** One lesson of a group; it happens in the video service behind call_url. */
+export interface LessonView {
+  lesson_id: string;
+  group_id: string;
+  group_name: string;
+  starts_at: string;
+  ends_at: string;
+  minutes: number;
+  status: LessonStatus;
+  topic: string;
+  /** The lesson's own link, or else the group's. */
+  call_url: string | null;
+  materials: LessonMaterial[];
+  recording_url: string | null;
+  note: string;
+}
+
+/** A student's view: their own mark on a held lesson. */
+export interface StudentLesson extends LessonView {
+  attendance: AttendanceStatus | null;
+}
+
+/** A teacher's view: every student of the group with their mark. */
+export interface TeacherLesson extends LessonView {
+  attendance: { account_id: string; name: string; status: AttendanceStatus | null }[];
+}
+
+export interface LessonChanges {
+  starts_at?: string;
+  minutes?: number;
+  status?: "planned" | "cancelled";
+  topic?: string;
+  call_url?: string | null;
+  materials?: LessonMaterial[];
+  recording_url?: string | null;
+  note?: string;
 }
 
 export type MetricStatus = "ok" | "below" | "no_data";
@@ -102,6 +155,8 @@ export interface StudentReport {
   practice: PracticeView;
   previous: { days: number; accuracy: number | null };
   homework: HomeworkView[];
+  /** The week's lessons that have started, with the student's marks. */
+  lessons?: AttendanceCount & { lessons: StudentLesson[] };
 }
 
 export interface QueueItem extends SubmissionView {
@@ -137,6 +192,11 @@ export interface Dashboard {
   account: AccountInfo;
   groups: GroupView[];
   homework: HomeworkView[];
+  /**
+   * A student: the coming two weeks and the last month. A teacher: the coming week and the
+   * ended lessons that wait for attendance. Missing in a dashboard kept from an older version.
+   */
+  lessons?: (StudentLesson | TeacherLesson)[];
 }
 
 export interface NewGroup {
@@ -265,6 +325,28 @@ export class Api {
 
   createHomework(token: string, groupId: string, hw: NewHomework) {
     return this.json<{ homework: HomeworkView }>(`/school/groups/${groupId}/homework`, { method: "POST", body: JSON.stringify(hw) }, token);
+  }
+
+  /** The account's lessons: the last two months and the coming four weeks. */
+  lessons(token: string) {
+    return this.json<{ lessons: StudentLesson[] }>("/school/lessons", {}, token);
+  }
+
+  groupLessons(token: string, groupId: string) {
+    return this.json<{ group: { group_id: string; name: string; call_url: string | null }; lessons: TeacherLesson[] }>(`/school/groups/${groupId}/lessons`, {}, token);
+  }
+
+  createLesson(token: string, groupId: string, lesson: { starts_at: string; minutes: number; topic?: string }) {
+    return this.json<{ lesson: TeacherLesson }>(`/school/groups/${groupId}/lessons`, { method: "POST", body: JSON.stringify(lesson) }, token);
+  }
+
+  updateLesson(token: string, lessonId: string, changes: LessonChanges) {
+    return this.json<{ lesson: TeacherLesson }>(`/school/lessons/${lessonId}`, { method: "PATCH", body: JSON.stringify(changes) }, token);
+  }
+
+  /** Present or absent for each student; the lesson becomes held. */
+  markAttendance(token: string, lessonId: string, marks: { account_id: string; status: AttendanceStatus }[]) {
+    return this.json<{ lesson: TeacherLesson }>(`/school/lessons/${lessonId}/attendance`, { method: "PUT", body: JSON.stringify({ marks }) }, token);
   }
 
   groupProgress(token: string, groupId: string) {

@@ -1,5 +1,6 @@
 import type { Attempt } from "@moonbridge/xapi";
 import type { Sql } from "../db/sql.js";
+import { LessonStore } from "./lesson-store.js";
 import type { MetricAttempt } from "./metrics.js";
 
 export type Role = "student" | "teacher";
@@ -176,7 +177,12 @@ const submission = (r: SubmissionRow): Submission => ({
  * in the routes; the store only reads and writes.
  */
 export class SchoolStore {
-  constructor(private readonly sql: Sql) {}
+  /** Lessons and attendance (school/lesson-store.ts). */
+  readonly lessons: LessonStore;
+
+  constructor(private readonly sql: Sql) {
+    this.lessons = new LessonStore(sql);
+  }
 
   async createAccount(a: { role: Role; name: string; login: string; passwordHash: string; playerId?: string }): Promise<Account> {
     const { rows } = await this.sql.query<AccountRow>(

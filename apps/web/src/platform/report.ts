@@ -63,6 +63,16 @@ export function reportBody(r: StudentReport, now: Date): HTMLElement[] {
   if (p.modes.length) {
     parts.push(el("p", { class: "muted" }, `Где занимался: ${p.modes.map((m) => `${MODES[m.mode] ?? "другое"} (${m.answers})`).join(", ")}.`));
   }
+  if (r.lessons?.lessons.length) {
+    const l = r.lessons;
+    parts.push(
+      el("h3", {}, "Занятия"),
+      el("p", { "data-report-lessons": `${l.present}/${l.held}` }, l.held ? `Был(а) на ${l.present} из ${l.held}${l.absent ? `, пропусков: ${l.absent}` : ""}.` : "Прошедшие занятия ещё не отмечены."),
+      ...l.lessons
+        .filter((x) => x.status === "cancelled")
+        .map((x) => el("p", { class: "muted" }, `${when(new Date(x.starts_at), now)}: урок отменён`)),
+    );
+  }
   parts.push(el("h3", {}, "Домашка недели"));
   if (!r.homework.length) parts.push(el("p", { class: "muted" }, "На эту неделю ничего не задано."));
   for (const h of r.homework) {
