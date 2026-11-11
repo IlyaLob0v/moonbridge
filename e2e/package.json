@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "End-to-end checks on phone screens: Moonbridge (episode, daily shift, offline) and the school (teacher, invitation, homework file, second phone); the pilot rehearsal (three students, five days, the metrics page)",
+  "description": "End-to-end checks on phone screens: Moonbridge (episode, daily shift, offline) and the school (teacher, invitation, homework file, second phone); a Moonbridge unit given as homework from the lesson catalog; the pilot rehearsal (three students, five days, the metrics page)",
   "scripts": {
     "moonbridge": "tsx moonbridge.e2e.ts",
     "school": "tsx school.e2e.ts",
-    "pilot": "tsx pilot.e2e.ts"
+    "pilot": "tsx pilot.e2e.ts",
+    "units": "tsx units.e2e.ts"
   },
   "dependencies": {
     "@moonbridge/content": "workspace:*",
