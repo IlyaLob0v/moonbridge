@@ -7,8 +7,8 @@ import type { Account, SchoolStore } from "./store.js";
 // admin token with curl. The admin sets each student's price per lesson, records the payments
 // that come by cash, transfer or card, voids mistakes and makes corrections. Every held lesson
 // costs the price by itself (the lessons' attendance calls FinanceStore.chargeLesson).
-// Teachers see their students' totals and history but change nothing; a student sees their
-// own. Online payment (YooKassa) will add payments in the same table.
+// Teachers see their students' totals and history but change nothing; students see nothing
+// of it. Online payment (YooKassa) will add payments in the same table.
 
 export interface FinanceDeps {
   config: ServerConfig;
@@ -118,7 +118,7 @@ export async function financeRoutes(app: FastifyInstance, d: FinanceDeps): Promi
     };
   };
 
-  // ---------- Reading: the teacher (own students, read only), the student (themself), the admin (anyone)
+  // ---------- Reading: the teacher (own students, read only) and the admin (anyone); never a student
 
   app.get("/school/finance", { preHandler: d.requireTeacher }, async (req) => {
     const students = new Map<string, { id: string; name: string; groups: string[] }>();
@@ -136,7 +136,7 @@ export async function financeRoutes(app: FastifyInstance, d: FinanceDeps): Promi
   app.get<{ Params: { id: string } }>("/school/students/:id/balance", { preHandler: d.requireAccount }, async (req, reply) => {
     const a = req.account!;
     const s = await student(req.params.id);
-    const visible = s && (a.role === "admin" || a.accountId === s.accountId || (a.role === "teacher" && (await d.school.teaches(a.accountId, s.accountId))));
+    const visible = s && (a.role === "admin" || (a.role === "teacher" && (await d.school.teaches(a.accountId, s.accountId))));
     if (!s || !visible) return reply.code(404).send({ error: "no such student" });
     return { student: { id: s.accountId, name: s.name }, ...summaryView(await finance.summary(s.accountId)), entries: (await finance.ledger(s.accountId)).map(entryView) };
   });

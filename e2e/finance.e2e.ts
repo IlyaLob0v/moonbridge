@@ -6,8 +6,7 @@
 //   hand → a lesson is held and Анна marked present: it costs her price by itself → Борис
 //   gets a payment by mistake, which is voided → the totals on top: held, paid, left; the
 //   month's total → the teacher sees "Оплаты" read only: the same numbers, no forms →
-//   Анна signs in on her phone and sees the same totals, her held lessons and her payments;
-//   Борис, with nothing paid, is asked to pay.
+//   Анна, the student, sees nothing of the money.
 //
 // Run: pnpm e2e:finance        (HEADED=1 to watch it)
 import { mkdir } from "node:fs/promises";
@@ -136,28 +135,16 @@ async function main(): Promise<void> {
     check((await cabinet.locator("[data-readonly]").count()) === 1, "and is told that the admin enters payments");
     await cabinet.screenshot({ path: `${ARTIFACTS}finance-teacher.png`, fullPage: true });
 
-    step("Анна sees her account");
+    step("Анна sees nothing of the money");
     const phone = await open();
     await signIn(phone, "anna", "moon-123");
-    const card = phone.locator('[data-card="balance"]');
-    await card.waitFor();
-    check(/Осталось 8 уроков/.test(await card.innerText()), "Today shows 8 lessons left");
-    await phone.screenshot({ path: `${ARTIFACTS}finance-student-today.png`, fullPage: true });
-    await card.click();
-    await phone.locator('[data-list="lessons"]').waitFor();
-    check(/Урок [\s\S]*−1\s500\s₽/.test(await phone.locator('[data-list="lessons"]').innerText()), "her held lessons, each with its price");
-    const history = await phone.locator('[data-list="payments"]').innerText();
-    check(/пробный урок бесплатно/.test(history) && /абонемент на декабрь/.test(history) && !/Ксения/.test(history), "her payments and the trial lesson, not who entered them");
-    check(/12\s000\s₽ · 8 уроков/.test(await phone.locator("[data-left]").innerText()), "and the same totals on top");
-    await phone.screenshot({ path: `${ARTIFACTS}finance-student-history.png`, fullPage: true });
-    check(await noSideScroll(phone), "the page fits the phone");
-
-    step("Борис has nothing paid");
-    const phoneB = await open();
-    await signIn(phoneB, "boris", "moon-123");
-    const cardB = phoneB.locator('[data-card="balance"]');
-    await cardB.waitFor();
-    check(/Оплаченных уроков нет/.test(await cardB.innerText()) && /оплатите/.test(await cardB.innerText()), "Today asks Борис to pay");
+    await phone.locator(".today").waitFor();
+    check((await phone.locator('[data-card="balance"]').count()) === 0 && !/₽/.test(await phone.locator(".today").innerText()), "Today has no payments card and no sums");
+    await phone.goto(`${WEB}/balance`);
+    await phone.locator(".today").waitFor();
+    check(!/₽/.test(await phone.locator("body").innerText()), "the old /balance address leads back to Today");
+    const res = await fetch(`${GATEWAY}/school/students/${anna.id}/balance`, { headers: { authorization: `Bearer ${(await api<{ token: string }>("/auth/login", { body: { login: "anna", password: "moon-123" } })).token}` } });
+    check(res.status === 404, "and the gateway does not give her the numbers");
 
     check(errors.length === 0, `no script errors${errors.length ? `: ${errors.join("; ")}` : ""}`);
   } finally {

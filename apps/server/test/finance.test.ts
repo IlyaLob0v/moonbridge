@@ -84,7 +84,7 @@ describe("the student's account", () => {
     await store.finance.chargeLesson(s.id, "les_000000000003", new Date("2026-12-05T15:30:00Z"), null);
     await store.finance.unchargeLesson(s.id, "les_000000000003");
 
-    const mine = await a.inject({ url: `/school/students/${s.id}/balance`, headers: auth(s.token) });
+    const mine = await a.inject({ url: `/school/students/${s.id}/balance`, headers: auth(t) });
     expect(mine.statusCode).toBe(200);
     expect(mine.json()).toMatchObject({ price_rub: 1500, paid_rub: 12000, lessons_held: 2, held_rub: 3000, balance_rub: 9000, lessons_left: 6, unpriced: 0, last_paid_on: "2026-11-28" });
     expect(mine.json().entries.map((e: { kind: string; amount_rub: number }) => [e.kind, e.amount_rub])).toEqual([
@@ -165,14 +165,14 @@ describe("held lessons", () => {
     const mark = (status: string) => a.inject({ method: "PUT", url: `/school/lessons/${lesson.lesson_id}/attendance`, headers: auth(t), payload: { marks: [{ account_id: s.id, status }] } });
     expect((await mark("present")).statusCode).toBe(200);
     await mark("present");
-    expect(await balanceOf(a, s.token, s.id)).toMatchObject({ lessons_held: 1, held_rub: 1500, balance_rub: 4500, lessons_left: 3 });
+    expect(await balanceOf(a, adm, s.id)).toMatchObject({ lessons_held: 1, held_rub: 1500, balance_rub: 4500, lessons_left: 3 });
     await mark("absent");
-    expect(await balanceOf(a, s.token, s.id)).toMatchObject({ lessons_held: 0, balance_rub: 6000, lessons_left: 4 });
+    expect(await balanceOf(a, adm, s.id)).toMatchObject({ lessons_held: 0, balance_rub: 6000, lessons_left: 4 });
   });
 });
 
 describe("who sees and changes the money", () => {
-  it("lets only the admin change money; teachers read their own students, students themselves", async () => {
+  it("lets only the admin change money; teachers read their own students, students see nothing", async () => {
     const a = await app();
     const ksenia = await teacher(a);
     const other = await teacher(a, "other");
@@ -192,11 +192,13 @@ describe("who sees and changes the money", () => {
     // The old teacher endpoints are gone.
     expect((await a.inject({ method: "POST", url: `/school/students/${anna.id}/payments`, headers: auth(ksenia), payload: { amount_rub: 1, method: "cash" } })).statusCode).toBe(404);
 
-    // Reading: her teacher and she herself, not another teacher or student; the admin sees everyone.
+    // Reading: her teacher, not another teacher; the admin sees everyone.
     expect((await a.inject({ url: `/school/students/${anna.id}/balance`, headers: auth(ksenia) })).json().paid_rub).toBe(6000);
     expect((await a.inject({ url: `/school/students/${anna.id}/balance`, headers: auth(adm) })).statusCode).toBe(200);
     expect((await a.inject({ url: `/school/students/${anna.id}/balance`, headers: auth(other) })).statusCode).toBe(404);
     expect((await a.inject({ url: `/school/students/${anna.id}/balance`, headers: auth(boris.token) })).statusCode).toBe(404);
+    // Students see nothing of the money, not even their own.
+    expect((await a.inject({ url: `/school/students/${anna.id}/balance`, headers: auth(anna.token) })).statusCode).toBe(404);
     expect((await a.inject({ url: "/school/finance", headers: auth(anna.token) })).statusCode).toBe(403);
   });
 
@@ -243,6 +245,6 @@ describe("who sees and changes the money", () => {
     const all = (await a.inject({ url: "/admin/finance", headers: auth("admin-secret") })).json();
     expect(all.students).toEqual([{ id: s.id, name: "anna", login: "anna", groups: ["A1 вечер"], price_rub: 1500, balance_rub: 3000, lessons_left: 2, paid_rub: 3000, lessons_held: 0, held_rub: 0, unpriced: 0, last_paid_on: "2026-11-30" }]);
     expect(all.month).toMatchObject({ received_rub: 3000, payments: 1 });
-    expect((await balanceOf(a, s.token, s.id)).entries[0].by).toBeNull();
+    expect((await balanceOf(a, adm, s.id)).entries[0].by).toBeNull();
   });
 });

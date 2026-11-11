@@ -3,7 +3,7 @@ import { el } from "../ui/dom.js";
 
 // Finances: each student has a price per lesson; the admin sets it and records payments by
 // hand, and every held lesson costs the price by itself (from the lessons' attendance). The
-// teacher sees the same pages read only. On top of each
+// teacher sees the same pages read only. Students never see money. On top of each
 // page the totals: lessons held and what they cost, paid, and what is left (or owed). Below
 // it the held lessons and the payments.
 
@@ -118,42 +118,7 @@ function moneyList(entries: LedgerEntryView[], onVoid?: (paymentId: string, butt
   );
 }
 
-// ---------- The student
-
-/** On Today: what is left, with a nudge when it is time to pay. */
-export function balanceCard(s: MoneySummary): HTMLElement {
-  return el(
-    "a",
-    { class: `card balance-card ${state(s)}`, href: "/balance", "data-link": "", "data-card": "balance", "data-balance": String(s.balance_rub) },
-    el("h2", {}, "Оплата уроков"),
-    el("p", { class: "balance-number" }, leftText(s)),
-    el("p", { class: "muted" }, `Проведено ${lessons(s.lessons_held)} на ${rub(s.held_rub)}, оплачено ${rub(s.paid_rub)}.`),
-    ...(state(s) !== "ok" ? [el("p", { class: "muted" }, s.lessons_left === 1 ? "Остался последний урок: пора продлить." : "Чтобы заниматься дальше, оплатите уроки у преподавателя.")] : []),
-    el("span", { class: "card-action" }, "Подробнее →"),
-  );
-}
-
-export async function renderBalance(root: HTMLElement, d: { api: Api; token: string; accountId: string }): Promise<void> {
-  let b: StudentBalance;
-  try {
-    b = await d.api.studentBalance(d.token, d.accountId);
-  } catch (e) {
-    root.replaceChildren(el("div", { class: "card" }, el("a", { href: "/", "data-link": "", class: "back" }, "← Сегодня"), el("p", { class: "form-error" }, messageOf(e))));
-    return;
-  }
-  root.replaceChildren(
-    el(
-      "div",
-      { class: "finance" },
-      el("header", { class: "section-head" }, el("a", { href: "/", "data-link": "", class: "back" }, "← Сегодня"), el("h1", {}, "Оплата уроков")),
-      el("section", { class: `card balance-card ${state(b)}` }, totals(b)),
-      el("section", { class: "card" }, el("h2", {}, "Занятия"), lessonList(b.entries)),
-      el("section", { class: "card" }, el("h2", {}, "Оплаты"), moneyList(b.entries)),
-    ),
-  );
-}
-
-// ---------- The teacher
+// ---------- The admin (changes) and the teacher (reads)
 
 export interface FinanceDeps {
   api: Api;

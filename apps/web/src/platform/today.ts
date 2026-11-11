@@ -1,10 +1,9 @@
 import type { Learner } from "../core/learner.js";
 import { streakOf, todaysShift } from "../moonbridge/daily.js";
-import type { Dashboard, MoneySummary, StudentReport } from "../net/api.js";
+import type { Dashboard, StudentReport } from "../net/api.js";
 import { hotelView, migrateState, openedUnits, studentCourse } from "../moonbridge/progress.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
-import { balanceCard } from "./finance.js";
 import { toMark } from "./lessons.js";
 import { myWeekCard } from "./report.js";
 import { studentCards } from "./school.js";
@@ -19,7 +18,7 @@ export interface TodayDeps {
   kv: KeyValue;
   now?: Date;
   /** A signed-in student's or teacher's school; undefined for guests and LMS launches. */
-  school?: { dashboard: Dashboard | undefined; role: "student" | "teacher" | "admin"; onSignOut: () => void; week?: StudentReport; balance?: MoneySummary; feedback?: HTMLElement };
+  school?: { dashboard: Dashboard | undefined; role: "student" | "teacher" | "admin"; onSignOut: () => void; week?: StudentReport; feedback?: HTMLElement };
 }
 
 /** The platform's home screen: what to do today, across courses and sections. */
@@ -78,7 +77,6 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
   }
   if (d.school?.role === "student" && d.school.dashboard) cards.push(...studentCards(d.school.dashboard, now));
   if (d.school?.week) cards.push(myWeekCard(d.school.week));
-  if (d.school?.balance) cards.push(balanceCard(d.school.balance));
   cards.push(
     el(
       "div",

@@ -7,7 +7,7 @@ import { loadDashboard, renderHomework } from "./platform/school.js";
 import { renderStudentReport } from "./platform/report.js";
 import { renderCatalog } from "./platform/catalog.js";
 import { renderContent } from "./platform/content.js";
-import { renderBalance, renderFinance } from "./platform/finance.js";
+import { renderFinance } from "./platform/finance.js";
 import { feedbackBox } from "./platform/feedback.js";
 import { openLessonFile, renderGroupLessons, renderStudentLessons } from "./platform/lessons.js";
 import { renderMetrics } from "./platform/metrics.js";
@@ -164,7 +164,6 @@ async function boot(): Promise<void> {
     if (path === "/teacher" && session.account?.role === "teacher") return renderTeacher(root, { api, token: session.token, kv: local });
     if (path === "/teacher/finance" && session.account?.role === "teacher") return renderFinance(root, { api, token: session.token, mode: "teacher" });
     if (path === "/finance" && session.account?.role === "admin") return renderFinance(root, { api, token: session.token, mode: "admin" });
-    if (path === "/balance" && session.account?.role === "student" && session.token) return renderBalance(root, { api, token: session.token, accountId: session.account.id });
     if (path === "/teacher/content" && session.account?.role === "teacher") return renderContent(root, { api, token: session.token, kv: local });
     if (path === "/teacher/catalog" && session.account?.role === "teacher") return renderCatalog(root, { api, token: session.token, kv: local, navigate });
     const metricsGroup = /^\/teacher\/metrics\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
@@ -178,12 +177,11 @@ async function boot(): Promise<void> {
     // The student's own week; online only, Today simply goes without it offline.
     const week =
       session.account?.role === "student" && session.token ? await api.studentReport(session.token, session.account.id).catch(() => undefined) : undefined;
-    const balance = session.account?.role === "student" && session.token ? await api.studentBalance(session.token, session.account.id).catch(() => undefined) : undefined;
     await renderToday(root, {
       profile,
       learner,
       kv,
-      ...(session.account ? { school: { dashboard: board, role: session.account.role, onSignOut, feedback: feedback(), ...(week ? { week } : {}), ...(balance ? { balance } : {}) } } : {}),
+      ...(session.account ? { school: { dashboard: board, role: session.account.role, onSignOut, feedback: feedback(), ...(week ? { week } : {}) } } : {}),
     });
     cacheLoadedAssets();
   };
