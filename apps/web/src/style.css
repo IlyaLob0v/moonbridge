@@ -204,3 +204,26 @@ details.new-homework summary { cursor: pointer; color: var(--accent); padding: 8
 .feedback-form { display: grid; gap: 8px; margin-top: 8px; text-align: left; }
 .feedback-form textarea { resize: vertical; font-size: 16px; }
 .feedback + .sign-out { margin-top: 4px; }
+
+/* Finances: lesson balance and payments */
+.balance-card .balance-number { font-family: Georgia, serif; font-size: 22px; margin: 4px 0; }
+.balance-card.low { border-color: var(--warn); }
+.balance-card.empty { border-color: var(--bad); }
+.balance-card.empty .balance-number { color: var(--bad); }
+.finance-student summary { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; cursor: pointer; list-style: none; }
+.finance-student summary::-webkit-details-marker { display: none; }
+.finance-student summary .muted { grid-column: 1 / -1; }
+.finance-student .student-name { font-weight: 600; overflow-wrap: anywhere; }
+.balance-badge { min-width: 36px; padding: 2px 10px; border-radius: 999px; text-align: center; font-weight: 600; background: var(--good); color: #10200f; }
+.balance-badge.low { background: var(--warn); color: #2a2208; }
+.balance-badge.empty { background: var(--bad); color: #fff; }
+.finance-form { display: grid; gap: 4px; margin: 12px 0; }
+.finance-form label { display: flex; flex-direction: column; gap: 6px; margin: 4px 0; min-width: 0; }
+.finance-form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.finance-form h3 { margin: 4px 0; }
+.correction summary { cursor: pointer; color: var(--accent); margin: 6px 0; }
+.ledger { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 6px; }
+.ledger li { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--edge); overflow-wrap: anywhere; }
+.ledger .delta { font-weight: 600; text-align: right; }
+.ledger .delta.plus { color: var(--good); }
+.ledger .delta.minus { color: var(--bad); }

@@ -18,13 +18,14 @@
     "dev:server:lms": "pnpm --filter @moonbridge/server dev:lms",
     "dev:web": "pnpm --filter @moonbridge/web dev",
     "build:web": "pnpm --filter @moonbridge/web build",
-    "e2e": "pnpm build:web && pnpm --filter @moonbridge/e2e moonbridge && pnpm --filter @moonbridge/e2e school && pnpm --filter @moonbridge/e2e pilot",
+    "e2e": "pnpm build:web && pnpm --filter @moonbridge/e2e moonbridge && pnpm --filter @moonbridge/e2e school && pnpm --filter @moonbridge/e2e pilot && pnpm --filter @moonbridge/e2e finance",
     "check": "pnpm typecheck && pnpm content:validate && pnpm test",
     "lms:up": "sh docker/setup.sh",
     "lms:down": "docker compose down",
     "lrs:errors": "pnpm --filter @moonbridge/server lrs:errors",
     "e2e:school": "pnpm build:web && pnpm --filter @moonbridge/e2e school",
     "e2e:pilot": "pnpm build:web && pnpm --filter @moonbridge/e2e pilot",
+    "e2e:finance": "pnpm build:web && pnpm --filter @moonbridge/e2e finance",
     "demo": "pnpm build:web && tsx scripts/demo.ts"
   },
   "devDependencies": {

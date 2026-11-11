@@ -6,6 +6,7 @@ import type { LiveContent } from "../content/live.js";
 import { sheetRoutes } from "../content/routes.js";
 import type { ServerConfig } from "../config.js";
 import type { Session, SessionTokens } from "../session.js";
+import { financeRoutes } from "./finance-routes.js";
 import { FileTooLargeError, type FileStore } from "./files.js";
 import { FailureLimiter } from "./limits.js";
 import { pilotMetrics } from "./metrics.js";
@@ -175,6 +176,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     if (!reply.sent && req.account?.role !== "teacher") return reply.code(403).send({ error: "teachers only" });
   };
 
+  await financeRoutes(app, { config: d.config, school: d.school, requireAccount, requireTeacher, now });
   if (d.content) await sheetRoutes(app, { live: d.content.live, requireTeacher, accountId: (req) => req.account!.accountId, ...(d.content.fetch ? { fetch: d.content.fetch } : {}) });
 
   /** The group, if the signed-in teacher runs it. */

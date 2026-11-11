@@ -6,6 +6,7 @@ import { askProfile, joinGroup, loadProfile, saveProfile, signIn, signOut } from
 import { loadDashboard, renderHomework } from "./platform/school.js";
 import { renderStudentReport } from "./platform/report.js";
 import { renderContent } from "./platform/content.js";
+import { renderBalance, renderFinance } from "./platform/finance.js";
 import { feedbackBox } from "./platform/feedback.js";
 import { renderMetrics } from "./platform/metrics.js";
 import { renderTeacher } from "./platform/teacher.js";
@@ -156,6 +157,8 @@ async function boot(): Promise<void> {
     const homeworkId = /^\/homework\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (homeworkId && session.kind === "account") return renderHomework(root, homeworkId, { api, token: session.token, kv: local, navigate });
     if (path === "/teacher" && session.account?.role === "teacher") return renderTeacher(root, { api, token: session.token, kv: local });
+    if (path === "/teacher/finance" && session.account?.role === "teacher") return renderFinance(root, { api, token: session.token });
+    if (path === "/balance" && session.account?.role === "student" && session.token) return renderBalance(root, { api, token: session.token, accountId: session.account.id });
     if (path === "/teacher/content" && session.account?.role === "teacher") return renderContent(root, { api, token: session.token, kv: local });
     const metricsGroup = /^\/teacher\/metrics\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (metricsGroup && session.account?.role === "teacher") return renderMetrics(root, metricsGroup, { api, token: session.token });
@@ -168,11 +171,12 @@ async function boot(): Promise<void> {
     // The student's own week; online only, Today simply goes without it offline.
     const week =
       session.account?.role === "student" && session.token ? await api.studentReport(session.token, session.account.id).catch(() => undefined) : undefined;
+    const balance = session.account?.role === "student" && session.token ? await api.studentBalance(session.token, session.account.id).catch(() => undefined) : undefined;
     await renderToday(root, {
       profile,
       learner,
       kv,
-      ...(session.account ? { school: { dashboard: board, role: session.account.role, onSignOut, feedback: feedback(), ...(week ? { week } : {}) } } : {}),
+      ...(session.account ? { school: { dashboard: board, role: session.account.role, onSignOut, feedback: feedback(), ...(week ? { week } : {}), ...(balance ? { balance } : {}) } } : {}),
     });
     cacheLoadedAssets();
   };

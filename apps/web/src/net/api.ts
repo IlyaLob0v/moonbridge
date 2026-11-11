@@ -212,6 +212,52 @@ export interface SheetResult {
 }
 
 /** A content sheet: a Google Sheets link or an .xlsx file. */
+/** Finances: a student's balance of paid lessons and its history. */
+export type PaymentMethod = "cash" | "transfer" | "card" | "online";
+export interface PaymentView {
+  payment_id: string;
+  account_id: string;
+  lessons: number;
+  amount_rub: number;
+  currency: string;
+  method: PaymentMethod;
+  status: "pending" | "succeeded" | "canceled";
+  paid_on: string;
+  note: string;
+  voided: boolean;
+}
+export interface LedgerEntryView {
+  entry_id: string;
+  /** Lessons: +N for a payment, −1 for a held lesson, −N when a payment is voided, ±N for a correction. */
+  delta: number;
+  kind: "payment" | "void" | "lesson" | "correction";
+  at: string;
+  note: string;
+  lesson_id: string | null;
+  by: string | null;
+  payment: { payment_id: string; amount_rub: number; method: PaymentMethod; voided: boolean } | null;
+}
+export interface BalanceLineView {
+  balance: number;
+  lessons_held: number;
+  last_paid_on: string | null;
+}
+export interface StudentBalance extends BalanceLineView {
+  student: { id: string; name: string };
+  entries: LedgerEntryView[];
+}
+export interface FinanceOverview {
+  month: { from: string; amount_rub: number; lessons: number; payments: number };
+  students: ({ id: string; name: string; groups: string[] } & BalanceLineView)[];
+}
+export interface NewPayment {
+  lessons: number;
+  amount_rub: number;
+  method: Exclude<PaymentMethod, "online">;
+  paid_on?: string;
+  note?: string;
+}
+
 export type SheetInput = { url: string } | File;
 
 export class Api {
@@ -295,6 +341,27 @@ export class Api {
 
   review(token: string, submissionId: string, grade: number, comment: string) {
     return this.json<{ submission: SubmissionView }>(`/school/submissions/${submissionId}/review`, { method: "POST", body: JSON.stringify({ grade, comment }) }, token);
+  }
+
+  finance(token: string) {
+    return this.json<FinanceOverview>("/school/finance", {}, token);
+  }
+
+  /** A student's balance and its history; a student asks for their own. */
+  studentBalance(token: string, accountId: string) {
+    return this.json<StudentBalance>(`/school/students/${accountId}/balance`, {}, token);
+  }
+
+  addPayment(token: string, accountId: string, payment: NewPayment) {
+    return this.json<{ payment: PaymentView; balance: number }>(`/school/students/${accountId}/payments`, { method: "POST", body: JSON.stringify(payment) }, token);
+  }
+
+  voidPayment(token: string, paymentId: string, reason: string) {
+    return this.json<{ payment: PaymentView; balance: number }>(`/school/payments/${paymentId}/void`, { method: "POST", body: JSON.stringify({ reason }) }, token);
+  }
+
+  addCorrection(token: string, accountId: string, delta: number, note: string) {
+    return this.json<{ balance: number }>(`/school/students/${accountId}/corrections`, { method: "POST", body: JSON.stringify({ delta, note }) }, token);
   }
 
   resetPassword(token: string, accountId: string) {

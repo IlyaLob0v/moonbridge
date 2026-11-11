@@ -34,6 +34,8 @@ jobs:
         run: pnpm --filter @moonbridge/e2e school
       - name: End-to-end, the pilot rehearsal (three students, five days, the metrics page)
         run: pnpm --filter @moonbridge/e2e pilot
+      - name: End-to-end, finances (payments, the balance on the student's phone)
+        run: pnpm --filter @moonbridge/e2e finance
       - uses: actions/upload-artifact@v4
         if: always()
         with:

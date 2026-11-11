@@ -1,3 +1,4 @@
+import { readdir } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { StatementBuilder } from "@moonbridge/xapi";
 import { decodeJwt } from "jose";
@@ -14,7 +15,10 @@ let sql: Sql;
 beforeAll(async () => {
   pglite = new PGlite();
   sql = { query: (text, params) => pglite.query(text, params), exec: (text) => pglite.exec(text) } as Sql;
-  expect(await migrate(sql)).toEqual(["001_init.sql", "002_school.sql", "003_review.sql", "004_content.sql", "005_pilot.sql"]);
+  // Every file, in name order (parallel branches each add their own NNN_name.sql).
+  const files = (await readdir(new URL("../migrations/", import.meta.url))).filter((f) => f.endsWith(".sql")).sort();
+  expect(files.slice(0, 5)).toEqual(["001_init.sql", "002_school.sql", "003_review.sql", "004_content.sql", "005_pilot.sql"]);
+  expect(await migrate(sql)).toEqual(files);
 });
 
 afterAll(async () => {
