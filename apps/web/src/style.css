@@ -178,7 +178,7 @@ details.new-homework summary { cursor: pointer; color: var(--accent); padding: 8
 .content-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
 /* Pilot metrics */
-.metrics-link { display: inline-block; margin: 10px 0 4px; font-weight: 600; }
+.metrics-link { display: block; margin: 10px 0 4px; font-weight: 600; }
 .metrics, .metric-students, .metric-errors, .feedback-list { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 8px; }
 .metric { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--edge); background: #1f1b2b; }
 .metric-label { grid-column: 1 / -1; }
@@ -211,3 +211,18 @@ details.new-homework summary { cursor: pointer; color: var(--accent); padding: 8
 .unit-episodes li.done { color: var(--ink-dim); }
 .catalog-unit.no-episodes { opacity: 0.7; }
 .assign-unit summary { cursor: pointer; margin-top: 8px; font-weight: 600; }
+
+/* Lessons: the student's list, the teacher's marks */
+.lesson-list { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; }
+.lesson-list .lesson-item { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--edge); background: #1f1b2b; overflow-wrap: anywhere; }
+.lesson-item.cancelled { opacity: 0.7; }
+.lesson-item.cancelled > p:first-child b { text-decoration: line-through; }
+.lesson-item[data-attendance="present"] > p:first-child::before { content: "✓ "; color: var(--good); }
+.lesson-item[data-attendance="absent"] > p:first-child::before { content: "✗ "; color: var(--bad); }
+.lesson-topic { font-weight: 600; }
+.lesson-links { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.teacher .lesson-item { overflow-wrap: anywhere; }
+.attendance { border: 1px solid var(--edge); border-radius: 10px; display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 12px; margin: 8px 0; }
+.attendance label { display: flex; align-items: center; gap: 6px; min-height: 32px; }
+.to-mark { border-color: var(--accent); }
+.lesson-file-list { list-style: none; padding: 0; margin: 4px 0; display: grid; gap: 4px; overflow-wrap: anywhere; }

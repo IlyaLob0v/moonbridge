@@ -1,6 +1,7 @@
-import { ApiError, type Api, type Dashboard, type GroupView, type HomeworkView, type SlotView } from "../net/api.js";
+import { ApiError, type Api, type Dashboard, type GroupView, type HomeworkView, type SlotView, type StudentLesson } from "../net/api.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
+import { lessonCard as generatedLessonCard, pastLessonsCard } from "./lessons.js";
 
 // The student's school on the platform: the next lesson, the call link and the homework.
 // The same data feeds the board in the Moonbridge lobby.
@@ -125,9 +126,11 @@ export function studentCards(d: Dashboard, now: Date): HTMLElement[] {
   if (!d.groups.length) {
     return [el("div", { class: "card muted-card" }, el("h2", {}, "Расписание и домашка"), el("p", { class: "muted" }, "Появятся, когда преподаватель добавит вас в группу."))];
   }
+  const lessons = d.lessons as StudentLesson[] | undefined;
   const lesson = nextLesson(d.groups, now);
   const live = lesson && lesson.start <= now;
-  const lessonCard = el(
+  // A dashboard kept from before lessons existed has only the weekly schedule.
+  const lessonCard = lessons ? generatedLessonCard(d, lessons, now) : el(
     "div",
     { class: "card", "data-card": "lesson" },
     el("h2", {}, live ? "Занятие идёт сейчас" : "Следующее занятие"),
@@ -157,7 +160,8 @@ export function studentCards(d: Dashboard, now: Date): HTMLElement[] {
     el("h2", {}, open ? `Домашка: ${open} ждёт` : "Домашка"),
     d.homework.length ? list : el("p", { class: "muted" }, "Пока ничего не задано."),
   );
-  return [lessonCard, homeworkCard];
+  const past = lessons && pastLessonsCard(lessons, now);
+  return [lessonCard, homeworkCard, ...(past ? [past] : [])];
 }
 
 export interface HomeworkPageDeps {

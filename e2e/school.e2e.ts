@@ -8,7 +8,8 @@
 //   on phone 2 the student signs in with the same login: the episode is still done and the
 //   homework still handed in → the teacher sees the hand-in and downloads the file →
 //   the teacher grades it from the review queue, sees the student's week and their weekly
-//   report, and sets a new password → the student signs in with it and finds the grade →
+//   report, and sets a new password; the teacher adds a lesson, posts its materials and
+//   recording and marks attendance, and the student finds them on Today and in their lessons → the student signs in with it and finds the grade →
 //   the teacher downloads the course as a sheet, uploads it with a mistake (the check names
 //   the row), fixes it and publishes: the platform serves the new task text.
 //
@@ -189,6 +190,48 @@ async function main(): Promise<void> {
     check(true, "the queue is empty after the grade");
     await teacher.screenshot({ path: `${ARTIFACTS}review-queue.png` });
 
+    step("Lessons: materials, the recording and attendance");
+    await teacher.locator("[data-lessons-link]").first().click();
+    await teacher.locator('[data-lessons="coming"]').waitFor();
+    check((await teacher.locator('[data-lessons="coming"] .lesson-item').count()) >= 8, "the weekly schedule has become four weeks of lessons");
+    await teacher.locator("summary", { hasText: "Дополнительный урок" }).click();
+    const lessonForm = teacher.locator('[data-form="lesson"]');
+    await lessonForm.getByLabel("Начало").fill(new Date(Date.now() + 3 * 3600_000 - 2 * 3600_000).toISOString().slice(0, 16));
+    await lessonForm.getByLabel("Тема").fill("Знакомство");
+    await lessonForm.getByRole("button", { name: "Добавить урок" }).click();
+    const extra = () => teacher.locator('[data-lessons="to-mark"] .lesson-item').filter({ hasText: "Знакомство" });
+    await extra().waitFor();
+    check(true, "a lesson that has ended waits for attendance");
+    await extra().locator("summary").click();
+    await extra().getByLabel("Материалы").fill("Рабочий лист https://example.com/sheet");
+    await extra().getByLabel("Запись урока").fill("https://example.com/recording");
+    await extra().getByRole("button", { name: "Сохранить" }).click();
+    await extra().locator("[data-recording]").waitFor();
+    const worksheet = Buffer.from("%PDF-1.4 worksheet for the lesson");
+    await extra().getByLabel("Файл к уроку").setInputFiles({ name: "Рабочий лист.pdf", mimeType: "application/pdf", buffer: worksheet });
+    await extra().locator(".lesson-links [data-lesson-file]").waitFor();
+    check(true, "the teacher attaches a PDF to the lesson");
+    check(await extra().getByLabel("Анна").isChecked(), "every student is ticked as present by default");
+    await extra().locator("[data-mark]").click();
+    const held = teacher.locator('[data-lessons="past"] .lesson-item[data-status="held"]').filter({ hasText: "Знакомство" });
+    await held.waitFor();
+    check(/были 1 из 1/.test(await held.innerText()), "the lesson is held with Анна present");
+    check(await noSideScroll(teacher), "the lessons page fits a 390 px screen");
+    await teacher.screenshot({ path: `${ARTIFACTS}teacher-lessons.png`, fullPage: true });
+    await page.goto(WEB);
+    const pastCard = page.locator('[data-card="past-lessons"]');
+    await pastCard.waitFor();
+    check((await pastCard.locator("[data-recording]").getAttribute("href")) === "https://example.com/recording", "Today links the recording of the last lesson");
+    await page.locator("[data-all-lessons]").click();
+    const pastList = page.locator('[data-lessons="past"]');
+    await pastList.waitFor();
+    check((await pastList.locator('[data-attendance="present"]').count()) === 1 && /Рабочий лист/.test(await pastList.innerText()), "the student's lessons show the mark and the materials");
+    const [lessonFile] = await Promise.all([page.waitForEvent("download"), pastList.locator("[data-lesson-file]").first().click()]);
+    check((await readFile((await lessonFile.path())!)).equals(worksheet), "the student downloads the lesson's file");
+    check(await noSideScroll(page), "the student's lessons fit a 390 px screen");
+    await page.screenshot({ path: `${ARTIFACTS}student-lessons.png`, fullPage: true });
+    await teacher.goto(`${WEB}/teacher`);
+
     step("The students' week and the weekly report");
     const row = teacher.locator(".students [data-student]").first();
     const days = Number(await row.locator(".week-dots").getAttribute("data-days"));
@@ -200,6 +243,7 @@ async function main(): Promise<void> {
     await report.waitFor();
     check(/Ответов: \d+/.test(await report.innerText()), "the weekly report counts her answers");
     check(/оценка 5/.test(await report.locator(".report-homework").first().innerText()), "and lists the week's homework with its grade");
+    check(/^1\/\d+$/.test((await report.locator("[data-report-lessons]").getAttribute("data-report-lessons")) ?? ""), "and the week's attendance");
     check(await noSideScroll(teacher), "the report fits a 390 px screen");
     await teacher.screenshot({ path: `${ARTIFACTS}report.png`, fullPage: true });
 
