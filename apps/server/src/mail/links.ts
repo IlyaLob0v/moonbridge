@@ -31,6 +31,11 @@ export class MailLinks {
     return claims?.payload.p === "unsubscribe" ? claims.payload.sub : undefined;
   }
 
+  /** Opens on the gateway, which confirms the address and sends the browser on to the platform. */
+  verify(token: string): string {
+    return `${this.publicUrl}/email/verify?t=${token}`;
+  }
+
   reset(token: string): string {
     return `${this.clientUrl}/reset/${token}`;
   }

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { MailLinks } from "../mail/links.js";
 import type { Mailer } from "../mail/mailer.js";
-import { resetMail } from "../mail/messages.js";
+import { resetMail, verifyMail } from "../mail/messages.js";
 import type { EmailStore } from "../mail/store.js";
 import { FailureLimiter } from "./limits.js";
 import { hashPassword } from "./passwords.js";
@@ -13,6 +13,11 @@ export interface MailDeps {
   links: MailLinks;
   /** False when e-mails only go to the log (no Postbox configured). */
   delivers: boolean;
+  /**
+   * Accounts without a confirmed address see only "Подтвердите почту". On by default once
+   * e-mails are delivered: without Postbox nobody could confirm, and the platform would close.
+   */
+  verification: boolean;
 }
 
 /** Simple on purpose: a typo is caught by the person reading their address back, not by a regex. */
@@ -23,6 +28,25 @@ export const normalizeEmail = (s: string) => s.trim().toLowerCase();
 export const RESET_MINUTES = 60;
 /** At most this many reset e-mails per account in an hour: the form must not become a way to flood someone's inbox. */
 const RESETS_PER_HOUR = 3;
+/** A confirmation link works this long. */
+export const VERIFY_HOURS = 48;
+/** Confirmation e-mails per account in an hour. */
+const VERIFICATIONS_PER_HOUR = 3;
+/** Accounts on one address: a family may share one, a single inbox must not open endless accounts. */
+export const ACCOUNTS_PER_EMAIL = 3;
+export const EMAIL_TAKEN = `На этот адрес уже зарегистрировано ${ACCOUNTS_PER_EMAIL} аккаунта. Укажите другую почту.`;
+
+/** Sends a link that confirms `email` for the account. Failures are logged, not thrown: "Отправить ещё раз" tries again. */
+export async function sendVerification(
+  mail: MailDeps,
+  now: Date,
+  a: { accountId: string; name: string },
+  email: string,
+  log: { error: (o: unknown, msg: string) => void },
+): Promise<void> {
+  const token = await mail.store.createVerification(a.accountId, email, now, new Date(now.getTime() + VERIFY_HOURS * 3600_000));
+  await mail.mailer.send(verifyMail({ name: a.name, email }, mail.links.verify(token), VERIFY_HOURS)).catch((e) => log.error({ err: e }, "verification e-mail not sent"));
+}
 
 const page = (title: string, body: string) =>
   `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
@@ -54,10 +78,14 @@ export async function emailRoutes(app: FastifyInstance, h: Helpers): Promise<voi
     async (req, reply) => {
       const raw = req.body.email === null ? "" : normalizeEmail(req.body.email);
       if (raw && !EMAIL.test(raw)) return reply.code(400).send({ error: "email", message: "Похоже, в адресе опечатка. Пример: anna@mail.ru" });
-      await mail.store.setEmail(req.account!.accountId, raw || null);
+      const me = req.account!;
+      if (raw && raw !== me.email && (await mail.store.accountsWith(raw, me.accountId)) >= ACCOUNTS_PER_EMAIL) return reply.code(409).send({ error: "email_taken", message: EMAIL_TAKEN });
+      await mail.store.setEmail(me.accountId, raw || null);
       // A new address is a fresh start: whoever gives it wants the reminders.
-      if (raw) await mail.store.setReminders(req.account!.accountId, true);
-      return { account: h.accountView((await school.accountById(req.account!.accountId))!) };
+      if (raw) await mail.store.setReminders(me.accountId, true);
+      const a = (await school.accountById(me.accountId))!;
+      if (raw && !a.emailVerified && raw !== me.email) await sendVerification(mail, h.now(), a, raw, req.log);
+      return { account: h.accountView(a) };
     },
   );
 
@@ -69,6 +97,35 @@ export async function emailRoutes(app: FastifyInstance, h: Helpers): Promise<voi
       return { account: h.accountView((await school.accountById(req.account!.accountId))!) };
     },
   );
+
+  /** "Отправить ещё раз": a new confirmation link to the account's address. */
+  app.post("/account/email/resend", { preHandler: h.requireAccount }, async (req, reply) => {
+    const a = req.account!;
+    if (!a.email) return reply.code(400).send({ error: "email", message: "Сначала укажите почту." });
+    if (a.emailVerified) return { ok: true, account: h.accountView(a) };
+    const now = h.now();
+    if ((await mail.store.verificationsSince(a.accountId, new Date(now.getTime() - 3600_000))) >= VERIFICATIONS_PER_HOUR) {
+      return reply.code(429).send({ error: "too_many", message: "Письмо уже отправлено несколько раз. Проверьте папку «Спам» или попробуйте через час." });
+    }
+    await sendVerification(mail, now, a, a.email, req.log);
+    return { ok: true, account: h.accountView(a) };
+  });
+
+  /** The link in the confirmation e-mail. Opening it confirms (no form: there is nothing to undo), then on to the platform. */
+  app.get<{ Querystring: { t?: string } }>("/email/verify", async (req, reply) => {
+    const t = req.query.t;
+    const accountId = t && t.length <= 100 ? await mail.store.verify(t, h.now()) : undefined;
+    if (accountId) return reply.redirect(`${mail.links.clientUrl}/?email=confirmed`, 302);
+    return reply
+      .code(404)
+      .type("text/html; charset=utf-8")
+      .send(
+        page(
+          "Ссылка не работает",
+          `<h1>Ссылка не работает</h1><p>Она устарела или почта в аккаунте уже другая. Новое письмо можно отправить на платформе, на экране «Сегодня».</p><p><a class="button" href="${mail.links.clientUrl}/">На платформу</a></p>`,
+        ),
+      );
+  });
 
   // ---------- Unsubscribe. GET shows a button (mail scanners open links), POST unsubscribes:
   // the button, and mail clients' own one-click "Отписаться" (List-Unsubscribe-Post).

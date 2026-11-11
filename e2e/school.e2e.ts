@@ -35,15 +35,29 @@ async function main(): Promise<void> {
   await mkdir(ARTIFACTS, { recursive: true });
   const uploads = await mkdtemp(join(tmpdir(), "moonbridge-e2e-uploads-"));
   step("Gateway and the built platform");
-  const bundle = await startServers({ ADMIN_TOKEN: ADMIN, UPLOAD_DIR: uploads });
+  // Without Postbox the confirmation is off by default; here it is on, and the links come from the log.
+  const bundle = await startServers({ ADMIN_TOKEN: ADMIN, UPLOAD_DIR: uploads, EMAIL_VERIFICATION: "required" });
+  /** The latest confirmation link the gateway printed for this address. */
+  const verifyLink = async (to: string): Promise<string> => {
+    for (let i = 0; i < 50; i++) {
+      const log = logOf("gateway");
+      const at = log.lastIndexOf(`e-mail to ${to}:`);
+      const link = at >= 0 ? /http:\/\/localhost:8787\/email\/verify\?t=[\w-]+/.exec(log.slice(at))?.[0] : undefined;
+      if (link) return link;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error(`no confirmation link for ${to} in the gateway log`);
+  };
   const episode = bundle.moonbridge!.episodes.find((e) => e.episode_id === EPISODE)!;
 
   const created = await fetch(`${GATEWAY}/admin/teachers`, {
     method: "POST",
     headers: { authorization: `Bearer ${ADMIN}`, "content-type": "application/json" },
-    body: JSON.stringify({ name: "Ксения", login: "ksenia", password: "teach-123" }),
+    body: JSON.stringify({ name: "Ксения", login: "ksenia", password: "teach-123", email: "ksenia@example.com" }),
   });
   check(created.status === 201, "the admin creates the teacher's account");
+  const confirmed = await fetch(await verifyLink("ksenia@example.com"), { redirect: "manual" });
+  check(confirmed.status === 302, "the teacher confirms her address by the link in the e-mail");
 
   const browser = await chromium.launch({ headless: !process.env.HEADED });
   const errors: string[] = [];
@@ -103,8 +117,14 @@ async function main(): Promise<void> {
     await joinForm.getByLabel("Пароль").fill(STUDENT.password);
     await joinForm.getByLabel("E-mail", { exact: true }).fill(STUDENT.email);
     await joinForm.getByRole("button", { name: "Вступить в группу" }).click();
+    await page.locator('[data-gate="email"]').waitFor();
+    check((await page.locator('[data-card="email"]').innerText()).includes(STUDENT.email), "until she confirms her address, the platform shows only «Подтвердите почту»");
+    check(await noSideScroll(page), "the confirmation screen fits a 390 px screen");
+    await page.screenshot({ path: `${ARTIFACTS}confirm-email.png`, fullPage: true });
+    await page.goto(await verifyLink(STUDENT.email));
     await page.getByRole("heading", { name: /Анна/ }).waitFor();
-    check(page.url() === `${WEB}/`, "the student lands on Today");
+    await page.locator('[data-card="lesson"]').waitFor();
+    check(page.url() === `${WEB}/`, "the link in the e-mail confirms it and the student lands on Today");
     const lesson = page.locator('[data-card="lesson"]');
     check(/A1 вечер/.test(await lesson.innerText()), "Today shows the next lesson");
     check((await lesson.locator("a.call").getAttribute("href")) === "https://telemost.yandex.ru/j/12345", "with the call link");

@@ -1,8 +1,10 @@
 import { ApiError, type AccountInfo, type Api } from "../net/api.js";
 import { el } from "../ui/dom.js";
 
-// The account's e-mail on Today. Students who joined before e-mail existed are asked for an
-// address once; afterwards the card shows it with the reminders switch.
+// The account's e-mail on Today. Accounts made before e-mail existed are asked for an address;
+// an address is then confirmed by the link in an e-mail, and afterwards the card shows it with
+// the reminders switch. Where the gateway requires a confirmed address (email_required), the
+// platform shows only this card until then (emailGate).
 
 export interface EmailCardDeps {
   api: Api;
@@ -76,6 +78,36 @@ export function emailCard(d: EmailCardDeps): HTMLElement {
       );
       return;
     }
+    if (account.email_verified === false) {
+      card.dataset.state = "unverified";
+      const status = el("p", { class: "muted", role: "status" });
+      const resend = el("button", { class: "primary", type: "button", "data-resend": "" }, "Отправить ещё раз") as HTMLButtonElement;
+      resend.addEventListener("click", async () => {
+        resend.disabled = true;
+        status.textContent = "";
+        try {
+          await d.api.resendConfirmation(d.token);
+          status.textContent = "Отправили новое письмо.";
+        } catch (err) {
+          status.textContent = err instanceof ApiError && err.userMessage ? err.userMessage : "Не получилось отправить. Проверьте интернет и попробуйте ещё раз.";
+        }
+        resend.disabled = false;
+      });
+      const edit = el("button", { class: "link", type: "button", "data-edit-email": "" }, "Изменить адрес");
+      edit.addEventListener("click", () => {
+        const { f, input } = form(false);
+        card.replaceChildren(el("h2", {}, "Почта"), f);
+        input.focus();
+      });
+      card.replaceChildren(
+        el("h2", {}, "Подтвердите почту"),
+        el("p", {}, "Мы отправили письмо на ", el("b", {}, account.email), ". Откройте его и нажмите «Подтвердить почту»."),
+        el("p", { class: "muted" }, "Письма нет? Загляните в папку «Спам» или отправьте ещё раз."),
+        status,
+        el("div", { class: "actions" }, resend, edit, el("button", { class: "link", type: "button", onclick: () => location.assign("/") }, "Я подтвердил(а)")),
+      );
+      return;
+    }
     card.dataset.state = account.reminders === false ? "off" : "on";
     const toggle = el("button", { class: "link", type: "button", "data-reminders": "" }, account.reminders === false ? "Включить напоминания" : "Не присылать напоминания") as HTMLButtonElement;
     toggle.addEventListener("click", async () => {
@@ -101,4 +133,21 @@ export function emailCard(d: EmailCardDeps): HTMLElement {
   };
   draw();
   return card;
+}
+
+/** Whether the gateway keeps this account out until its address is confirmed. */
+export const mustConfirmEmail = (a: AccountInfo) => a.email_required === true && a.email_verified !== true;
+
+/** The whole platform while the address is not confirmed: the e-mail card and "Выйти". */
+export function renderEmailGate(root: HTMLElement, d: EmailCardDeps & { onSignOut: () => void }): void {
+  root.replaceChildren(
+    el(
+      "div",
+      { class: "today", "data-gate": "email" },
+      el("header", { class: "platform-head" }, el("div", { class: "brand" }, "Школа английского"), el("h1", {}, d.account.name)),
+      el("p", {}, "Чтобы пользоваться платформой, подтвердите почту. На неё придут ссылка, если забудете пароль, и напоминания."),
+      emailCard({ ...d, onChange: (a) => (d.onChange?.(a), mustConfirmEmail(a) ? undefined : location.assign("/")) }),
+      el("button", { class: "link sign-out", type: "button", onclick: d.onSignOut }, "Выйти"),
+    ),
+  );
 }

@@ -27,6 +27,11 @@ export interface ServerConfig {
   postbox?: { endpoint: string; region: string; accessKeyId: string; secretAccessKey: string; from: string };
   /** Moscow hour the "смена ждёт" evening reminder goes out from. */
   reminderEveningHour: number;
+  /**
+   * Accounts must confirm their e-mail before using the platform. EMAIL_VERIFICATION=required|off;
+   * by default on exactly when Postbox delivers e-mails.
+   */
+  emailVerification: boolean;
   /** Allows POST /session/guest for local play without an LMS. Never in production. */
   allowGuest: boolean;
   lrs?: { endpoint: string; key: string; secret: string };
@@ -99,6 +104,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
         }
       : {}),
     reminderEveningHour: Number(env.REMINDER_EVENING_HOUR ?? 19),
+    emailVerification: env.EMAIL_VERIFICATION ? env.EMAIL_VERIFICATION === "required" : Boolean(env.POSTBOX_ACCESS_KEY_ID),
     allowGuest: !production && env.ALLOW_GUEST !== "false",
     ...(env.LRS_ENDPOINT
       ? { lrs: { endpoint: env.LRS_ENDPOINT, key: required(env, "LRS_KEY"), secret: required(env, "LRS_SECRET") } }

@@ -7,7 +7,7 @@ import { loadDashboard, renderHomework } from "./platform/school.js";
 import { renderStudentReport } from "./platform/report.js";
 import { renderCatalog } from "./platform/catalog.js";
 import { renderContent } from "./platform/content.js";
-import { emailCard } from "./platform/email.js";
+import { emailCard, mustConfirmEmail, renderEmailGate } from "./platform/email.js";
 import { renderFinance } from "./platform/finance.js";
 import { feedbackBox } from "./platform/feedback.js";
 import { openLessonFile, renderGroupLessons, renderStudentLessons } from "./platform/lessons.js";
@@ -152,9 +152,22 @@ async function boot(): Promise<void> {
     if (path !== location.pathname) history.pushState(null, "", path);
     void route();
   };
+  // Until the address is confirmed (where the gateway requires it) every page is the e-mail card.
+  // Checked online only, and no more once confirmed.
+  let emailConfirmed = false;
   const route = async () => {
     const path = location.pathname;
     if (path !== currentPath) [previousPath, currentPath] = [currentPath, path];
+    // Back from the confirmation link: the dashboard below shows the address confirmed.
+    if (new URLSearchParams(location.search).get("email") === "confirmed") history.replaceState(null, "", path);
+    if (session.kind === "account" && session.token && !emailConfirmed) {
+      const board = await dashboard();
+      if (board && mustConfirmEmail(board.account)) {
+        document.body.dataset.section = "platform";
+        return renderEmailGate(root, { api, token: session.token, account: board.account, onSignOut });
+      }
+      if (board) emailConfirmed = true;
+    }
     document.body.dataset.section = path.startsWith("/moonbridge") ? "moonbridge" : "platform";
     if (path === "/moonbridge" || path.startsWith("/moonbridge/")) {
       // A separate chunk: the platform never downloads the game unless the student opens it.

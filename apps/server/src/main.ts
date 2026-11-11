@@ -78,7 +78,7 @@ await content.restore((m) => console.warn(m));
 
 // E-mail: Postbox when configured; otherwise every e-mail goes to the log, links included.
 const mailer = config.postbox ? new PostboxMailer(config.postbox) : new LogMailer();
-const mail = { store: new EmailStore(schoolDb), mailer, links: new MailLinks(config), delivers: Boolean(config.postbox) };
+const mail = { store: new EmailStore(schoolDb), mailer, links: new MailLinks(config), delivers: Boolean(config.postbox), verification: config.emailVerification };
 const reminders = new Reminders(mail.store, mailer, mail.links, { eveningHour: config.reminderEveningHour }, (e, m) => log(e, m));
 
 const app = await buildApp({

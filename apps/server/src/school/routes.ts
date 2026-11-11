@@ -6,7 +6,7 @@ import type { LiveContent } from "../content/live.js";
 import { sheetRoutes } from "../content/routes.js";
 import type { ServerConfig } from "../config.js";
 import type { Session, SessionTokens } from "../session.js";
-import { EMAIL, emailRoutes, normalizeEmail, type MailDeps } from "./email-routes.js";
+import { ACCOUNTS_PER_EMAIL, EMAIL, EMAIL_TAKEN, emailRoutes, normalizeEmail, sendVerification, type MailDeps } from "./email-routes.js";
 import { financeRoutes } from "./finance-routes.js";
 import { FileTooLargeError, type FileStore } from "./files.js";
 import { dashboardLessons, lessonRoutes, weekAttendance, type LessonBilling } from "./lessons.js";
@@ -127,7 +127,10 @@ interface GroupBody {
   unit_access?: Group["unitAccess"];
 }
 
-const accountView = (a: Account) => ({ id: a.accountId, name: a.name, role: a.role, login: a.login, email: a.email, reminders: a.reminders });
+const baseAccountView = (a: Account) => ({ id: a.accountId, name: a.name, role: a.role, login: a.login, email: a.email, email_verified: a.emailVerified, reminders: a.reminders });
+
+/** What an account with an unconfirmed address may still do: see who it is, and give or confirm the address. */
+const UNVERIFIED_ALLOWED = new Set(["/school/dashboard", "/account/email", "/account/email/resend", "/account/reminders"]);
 const submissionView = (s: Submission) => ({
   submission_id: s.submissionId,
   account_id: s.accountId,
@@ -177,6 +180,8 @@ const groupView = (g: Group) => ({ group_id: g.groupId, name: g.name, teacher_na
  */
 export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise<void> {
   const now = d.now ?? (() => new Date());
+  /** With `email_required` the platform shows only "Подтвердите почту" until `email_verified`. */
+  const accountView = (a: Account) => ({ ...baseAccountView(a), ...(d.mail?.verification ? { email_required: true } : {}) });
 
   const sessionOf = async (req: FastifyRequest): Promise<Session | undefined> => {
     const header = req.headers.authorization;
@@ -189,6 +194,9 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     if (!session || !account) return reply.code(401).send({ error: "sign-in required" });
     req.session = session;
     req.account = account;
+    if (d.mail?.verification && !account.emailVerified && !UNVERIFIED_ALLOWED.has(req.routeOptions.url ?? "")) {
+      return reply.code(403).send({ error: "email_unverified", message: "Подтвердите почту: откройте письмо и нажмите «Подтвердить почту»." });
+    }
   };
 
   const requireTeacher = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -237,8 +245,19 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
       reply.code(400).send({ error: "email", message: "Похоже, в адресе почты опечатка. Пример: anna@mail.ru" });
       return undefined;
     }
+    // Every account, whatever its role, gives an address and confirms it by the link in an e-mail.
+    if (d.mail && !email) {
+      reply.code(400).send({ error: "email", message: "Укажите почту: на неё придёт письмо для подтверждения" });
+      return undefined;
+    }
+    if (d.mail && email && (await d.mail.store.accountsWith(email)) >= ACCOUNTS_PER_EMAIL) {
+      reply.code(409).send({ error: "email_taken", message: EMAIL_TAKEN });
+      return undefined;
+    }
     try {
-      return await d.school.createAccount({ role, name: body.name.trim(), login, email, passwordHash: await hashPassword(body.password), ...(playerId ? { playerId } : {}) });
+      const a = await d.school.createAccount({ role, name: body.name.trim(), login, email, passwordHash: await hashPassword(body.password), ...(playerId ? { playerId } : {}) });
+      if (d.mail && email) await sendVerification(d.mail, now(), a, email, app.log);
+      return a;
     } catch (e) {
       if (!(e instanceof LoginTakenError)) throw e;
       reply.code(409).send({ error: "login_taken", message: "Такой логин уже занят" });
@@ -272,6 +291,8 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
   const clock = () => now().getTime();
   const loginFailures = new FailureLimiter(5, 15 * 60_000, clock);
   const addressFailures = new FailureLimiter(30, 15 * 60_000, clock);
+  // New accounts from one address: a class joining from the school's Wi-Fi fits, a script does not.
+  const newAccounts = new FailureLimiter(30, 60 * 60_000, clock);
 
   app.post<{ Body: { login: string; password: string } }>("/auth/login", { schema: { body: credentials } }, async (req, reply) => {
     const login = normalizeLogin(req.body.login);
@@ -318,6 +339,9 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
         typeof body.login === "string" && typeof body.password === "string" && body.password.length >= 6 && body.password.length <= 128 &&
         (body.email === undefined || (typeof body.email === "string" && body.email.length <= 254));
       if (!valid) return reply.code(400).send({ error: "fields", message: "Нужны имя, логин и пароль не короче 6 символов" });
+      const wait = newAccounts.retryAfter(req.ip);
+      if (wait) return reply.code(429).header("Retry-After", String(wait)).send({ error: "too_many", message: `Слишком много новых аккаунтов. Попробуйте через ${Math.ceil(wait / 60)} мин.` });
+      newAccounts.fail(req.ip);
       const guest = session && !session.account && !session.lti && !(await d.school.playerTaken(session.playerId)) ? session.playerId : undefined;
       account = await createAccount("student", body as NewAccountBody, reply, guest);
       if (!account) return;
@@ -516,8 +540,8 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
           from,
           now: to,
           students: members.length,
-          withEmail: members.filter((m) => m.email).length,
-          unsubscribed: members.filter((m) => m.email && !m.reminders).length,
+          withEmail: members.filter((m) => m.email && m.emailVerified).length,
+          unsubscribed: members.filter((m) => m.email && m.emailVerified && !m.reminders).length,
         })
       : null;
     return { group: { id: g.groupId, name: g.name }, pilot_from: set ?? null, metrics, email, feedback: feedback.map(feedbackView) };

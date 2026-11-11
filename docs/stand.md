@@ -47,8 +47,10 @@ docker compose -f deploy/stand/compose.yaml --env-file deploy/stand/.env logs -f
 curl -X POST https://app.example.ru/api/admin/teachers \
   -H "Authorization: Bearer <ADMIN_TOKEN из .env>" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Ксения","login":"ksenia","password":"придумайте-пароль"}'
+  -d '{"name":"Ксения","login":"ksenia","password":"придумайте-пароль","email":"ksenia@school.ru"}'
 ```
+
+Почта обязательна: на неё придёт письмо «Подтвердите почту», без подтверждения (когда настроен Postbox) платформа не пустит. Подробнее — [email.md](email.md).
 
 Ответ `201` — можно входить на `https://app.example.ru`. В кабинете «Контент курса» Ксения скачивает таблицу, правит её в Google Таблицах и публикует сама (см. «Курс в таблице» в README).
 

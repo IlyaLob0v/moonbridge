@@ -17,6 +17,8 @@ export interface Account {
   email: string | null;
   /** False once the person unsubscribed from reminders. */
   reminders: boolean;
+  /** The person opened the confirmation link sent to `email`. */
+  emailVerified: boolean;
 }
 
 /** A weekly lesson slot, Moscow time. */
@@ -116,7 +118,7 @@ function newId(prefix: string, length = 16): string {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, length)}`;
 }
 
-const ACCOUNT = "a.account_id, a.role, a.name, a.login, a.player_id, a.email, a.reminders";
+const ACCOUNT = "a.account_id, a.role, a.name, a.login, a.player_id, a.email, a.reminders, a.email_verified_at IS NOT NULL AS email_verified";
 const GROUP = "g.group_id, g.teacher_id, t.name AS teacher_name, g.name, g.call_url, g.schedule, g.unit_access";
 const HOMEWORK =
   "h.homework_id, h.group_id, h.title, h.description, h.due_at, h.needs_file, h.module_id, h.account_id, (SELECT x.name FROM accounts x WHERE x.account_id = h.account_id) AS assignee_name, h.auto_grade, h.created_at";
@@ -131,6 +133,7 @@ interface AccountRow {
   player_id: string;
   email: string | null;
   reminders: boolean;
+  email_verified: boolean;
 }
 interface GroupRow {
   group_id: string;
@@ -179,6 +182,7 @@ const account = (r: AccountRow): Account => ({
   playerId: r.player_id,
   email: r.email,
   reminders: r.reminders,
+  emailVerified: r.email_verified,
 });
 const group = (r: GroupRow): Group => ({
   groupId: r.group_id,
@@ -231,11 +235,18 @@ export class SchoolStore {
     this.lessons = new LessonStore(sql);
   }
 
-  async createAccount(a: { role: Role; name: string; login: string; passwordHash: string; playerId?: string; email?: string | null }): Promise<Account> {
+  async createAccount(a: {
+    role: Role;
+    name: string;
+    login: string;
+    passwordHash: string;
+    playerId?: string;
+    email?: string | null;
+  }): Promise<Account> {
     const { rows } = await this.sql.query<AccountRow>(
       `INSERT INTO accounts (account_id, role, name, login, password_hash, player_id, email) VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (login) DO NOTHING
-       RETURNING account_id, role, name, login, player_id, email, reminders`,
+       RETURNING account_id, role, name, login, player_id, email, reminders, email_verified_at IS NOT NULL AS email_verified`,
       [newId("acc"), a.role, a.name, a.login, a.passwordHash, a.playerId ?? newId("player"), a.email ?? null],
     );
     if (!rows[0]) throw new LoginTakenError();

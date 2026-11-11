@@ -11,6 +11,10 @@ export interface AccountInfo {
   email?: string | null;
   /** False once the person unsubscribed from reminders. */
   reminders?: boolean;
+  /** The person opened the confirmation link sent to `email`. */
+  email_verified?: boolean;
+  /** The gateway lets the account in only with a confirmed address. */
+  email_required?: boolean;
 }
 
 /** What the gateway answers to a sign-in or a join. */
@@ -424,6 +428,11 @@ export class Api {
 
   setEmail(token: string, email: string | null) {
     return this.json<{ account: AccountInfo }>("/account/email", { method: "PUT", body: JSON.stringify({ email }) }, token);
+  }
+
+  /** "Отправить ещё раз": a new confirmation link to the account's address. */
+  resendConfirmation(token: string) {
+    return this.json<{ ok: true; account: AccountInfo }>("/account/email/resend", { method: "POST" }, token);
   }
 
   setReminders(token: string, on: boolean) {

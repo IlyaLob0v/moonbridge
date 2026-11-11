@@ -28,8 +28,8 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
   const course = studentCourse(bundle);
   const due = d.learner.repeats.due(now);
   const cards: HTMLElement[] = [];
-  // No address yet: asked first, before anything else on the screen.
-  const askEmail = d.school?.email?.dataset.state === "missing";
+  // No address yet, or not confirmed: asked first, before anything else on the screen.
+  const askEmail = d.school?.email?.dataset.state === "missing" || d.school?.email?.dataset.state === "unverified";
   if (askEmail) cards.push(d.school!.email!);
   if (d.school?.role === "admin") {
     cards.push(

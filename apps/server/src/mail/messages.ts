@@ -109,3 +109,16 @@ export function resetMail(r: Recipient & { login: string }, url: string, minutes
     button: { label: "Задать новый пароль", url },
   });
 }
+
+export function verifyMail(r: Recipient, url: string, hours: number): Mail {
+  return layout({
+    to: r.email,
+    subject: "Подтвердите почту для школы английского",
+    lines: [
+      `${r.name}, нажмите кнопку, чтобы подтвердить, что это ваш адрес.`,
+      `Ссылка работает ${hours} часов. На подтверждённую почту придут напоминания и ссылка, если забудете пароль.`,
+      "Если вы не регистрировались, просто удалите это письмо.",
+    ],
+    button: { label: "Подтвердить почту", url },
+  });
+}

@@ -38,29 +38,46 @@ afterAll(async () => {
 beforeEach(async () => {
   clock = new Date("2026-11-30T09:00:00Z");
   mailer = new MemoryMailer();
-  await sql.exec("TRUNCATE accounts, school_groups, group_members, invites, homework, submissions, attempts, emails, password_resets CASCADE");
+  await sql.exec("TRUNCATE accounts, school_groups, group_members, invites, homework, submissions, attempts, emails, password_resets, email_verifications CASCADE");
 });
 
 const store = () => new EmailStore(sql);
 const reminders = () => new Reminders(store(), mailer, links, { eveningHour: 19 }, () => undefined);
 
-async function school() {
-  const h = await harness({ school: { store: new SchoolStore(sql), files: new DiskFileStore(uploads), mail: { store: store(), mailer, links, delivers: true }, now: () => clock } });
+async function school(verification = false) {
+  const h = await harness({ school: { store: new SchoolStore(sql), files: new DiskFileStore(uploads), mail: { store: store(), mailer, links, delivers: true, verification }, now: () => clock } });
   return h.app;
 }
+
+const VERIFY_SUBJECT = "Подтвердите почту для школы английского";
+/** Confirms every address as if its link had been opened, and drops the confirmation e-mails. */
+async function confirmAll() {
+  await sql.query("UPDATE accounts SET email_verified_at = now() WHERE email IS NOT NULL AND email_verified_at IS NULL");
+  const rest = mailer.sent.filter((m) => m.subject !== VERIFY_SUBJECT);
+  mailer.sent.splice(0, mailer.sent.length, ...rest);
+}
+const verifyLink = (to: string) => {
+  const m = mailer.sent.filter((x) => x.subject === VERIFY_SUBJECT && x.to === to).at(-1);
+  const url = new URL(/https:\/\/moonbridge\.test\/api\/email\/verify\?t=[\w-]+/.exec(m!.text)![0]);
+  return `${url.pathname.replace(/^\/api/, "")}${url.search}`;
+};
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
 
 async function setup(app: FastifyInstance) {
-  await app.inject({ method: "POST", url: "/admin/teachers", headers: auth("admin-secret"), payload: { name: "Ксения", login: "ksenia", password: "teach-123" } });
+  await app.inject({ method: "POST", url: "/admin/teachers", headers: auth("admin-secret"), payload: { name: "Ксения", login: "ksenia", password: "teach-123", email: "ksenia@school.test" } });
+  await confirmAll();
   const t = (await app.inject({ method: "POST", url: "/auth/login", payload: { login: "ksenia", password: "teach-123" } })).json().token as string;
   const groupId = (await app.inject({ method: "POST", url: "/school/groups", headers: auth(t), payload: { name: "A1 вечер" } })).json().group.group_id as string;
   const code = (await app.inject({ method: "POST", url: `/school/groups/${groupId}/invites`, headers: auth(t) })).json().code as string;
   return { t, groupId, code };
 }
 
-async function enrol(app: FastifyInstance, code: string, fields: Record<string, string>) {
-  return app.inject({ method: "POST", url: `/invites/${code}/join`, payload: { name: "Анна", password: "secret-1", ...fields } });
+/** Joins by the invitation; the address is confirmed unless `confirmed` is false. */
+async function enrol(app: FastifyInstance, code: string, fields: Record<string, string>, confirmed = true) {
+  const res = await app.inject({ method: "POST", url: `/invites/${code}/join`, payload: { name: "Анна", password: "secret-1", ...fields } });
+  if (confirmed) await confirmAll();
+  return res;
 }
 
 async function answer(playerId: string, at: Date) {
@@ -90,15 +107,15 @@ describe("the address on the account", () => {
     expect(typo.statusCode).toBe(400);
     expect(typo.json().error).toBe("email");
 
-    // Old joins without an address still work; the student is asked on Today.
     const gleb = await enrol(app, code, { login: "gleb" });
-    expect(gleb.json().account.email).toBeNull();
+    expect(gleb.statusCode).toBe(400);
+    expect(gleb.json().message).toContain("Укажите почту");
   });
 
   it("can be added, changed and removed later, and reminders switched off and on", async () => {
     const app = await school();
     const { code } = await setup(app);
-    const s = (await enrol(app, code, { login: "gleb" })).json().token as string;
+    const s = (await enrol(app, code, { login: "gleb", email: "g@mail.ru" })).json().token as string;
     expect((await app.inject({ method: "PUT", url: "/account/email", headers: auth(s), payload: { email: "nope" } })).statusCode).toBe(400);
     const set = await app.inject({ method: "PUT", url: "/account/email", headers: auth(s), payload: { email: "Gleb@Mail.ru" } });
     expect(set.json().account).toMatchObject({ email: "gleb@mail.ru", reminders: true });
@@ -111,13 +128,94 @@ describe("the address on the account", () => {
   });
 });
 
+describe("confirming the address", () => {
+  it("is asked of every new account, whatever its role, by a link in an e-mail", async () => {
+    const app = await school(true);
+    const bare = await app.inject({ method: "POST", url: "/admin/teachers", headers: auth("admin-secret"), payload: { name: "Ксения", login: "ksenia", password: "teach-123" } });
+    expect(bare.statusCode).toBe(400);
+    const teacher = await app.inject({ method: "POST", url: "/admin/teachers", headers: auth("admin-secret"), payload: { name: "Ксения", login: "ksenia", password: "teach-123", email: "ksenia@school.test" } });
+    expect(teacher.json().account).toMatchObject({ email: "ksenia@school.test", email_verified: false });
+    const admin = await app.inject({ method: "POST", url: "/admin/admins", headers: auth("admin-secret"), payload: { name: "Илья", login: "ilya@school.test", password: "admin-123" } });
+    expect(admin.json().account).toMatchObject({ email: "ilya@school.test", email_verified: false });
+    expect(mailer.sent.map((m) => [m.to, m.subject])).toEqual([
+      ["ksenia@school.test", VERIFY_SUBJECT],
+      ["ilya@school.test", VERIFY_SUBJECT],
+    ]);
+    expect(mailer.sent[0]!.text).toContain("Подтвердить почту: https://moonbridge.test/api/email/verify?t=");
+    expect(mailer.sent[0]!.headers).toBeUndefined();
+
+    // Until then only Today and the address itself work.
+    const t = (await app.inject({ method: "POST", url: "/auth/login", payload: { login: "ksenia", password: "teach-123" } })).json().token as string;
+    const blocked = await app.inject({ method: "POST", url: "/school/groups", headers: auth(t), payload: { name: "A1" } });
+    expect(blocked.statusCode).toBe(403);
+    expect(blocked.json().error).toBe("email_unverified");
+    expect((await app.inject({ url: "/school/dashboard", headers: auth(t) })).json().account.email_verified).toBe(false);
+
+    const opened = await app.inject({ url: verifyLink("ksenia@school.test") });
+    expect(opened.statusCode).toBe(302);
+    expect(opened.headers.location).toBe("https://app.moonbridge.test/?email=confirmed");
+    // Mail scanners open links too: a second open is fine.
+    expect((await app.inject({ url: verifyLink("ksenia@school.test") })).statusCode).toBe(302);
+    expect((await app.inject({ method: "POST", url: "/school/groups", headers: auth(t), payload: { name: "A1" } })).statusCode).toBe(201);
+    expect((await app.inject({ url: "/email/verify?t=forged-token-123" })).statusCode).toBe(404);
+  });
+
+  it("starts over when the address changes; resending is limited and an old link does not confirm a new address", async () => {
+    const app = await school(true);
+    const { code } = await setup(app);
+    const s = (await enrol(app, code, { login: "anna", email: "anna@mail.ru" })).json().token as string;
+    expect((await app.inject({ url: "/school/dashboard", headers: auth(s) })).json().account.email_verified).toBe(true);
+    // The same address again keeps the confirmation.
+    expect((await app.inject({ method: "PUT", url: "/account/email", headers: auth(s), payload: { email: "anna@mail.ru" } })).json().account.email_verified).toBe(true);
+    expect(mailer.sent).toHaveLength(0);
+
+    const changed = await app.inject({ method: "PUT", url: "/account/email", headers: auth(s), payload: { email: "anna@yandex.ru" } });
+    expect(changed.json().account).toMatchObject({ email: "anna@yandex.ru", email_verified: false });
+    const old = verifyLink("anna@yandex.ru");
+    expect((await app.inject({ url: "/school/students/acc_x/report", headers: auth(s) })).statusCode).toBe(403);
+
+    await app.inject({ method: "PUT", url: "/account/email", headers: auth(s), payload: { email: "anna@gmail.com" } });
+    expect((await app.inject({ url: old })).statusCode).toBe(404);
+    // Three confirmation e-mails an hour per account: the one at joining and the two changes.
+    const resend = () => app.inject({ method: "POST", url: "/account/email/resend", headers: auth(s) });
+    expect((await resend()).statusCode).toBe(429);
+    clock = new Date(clock.getTime() + 61 * 60_000);
+    for (let i = 0; i < 3; i++) expect((await resend()).statusCode).toBe(200);
+    expect((await resend()).statusCode).toBe(429);
+    expect(mailer.sent.filter((m) => m.to === "anna@gmail.com")).toHaveLength(4);
+    expect((await app.inject({ url: verifyLink("anna@gmail.com") })).statusCode).toBe(302);
+    expect((await app.inject({ url: "/school/dashboard", headers: auth(s) })).json().account.email_verified).toBe(true);
+  });
+
+  it("lets one address open at most three accounts", async () => {
+    const app = await school();
+    const { code } = await setup(app);
+    for (const login of ["kid1", "kid2", "kid3"]) expect((await enrol(app, code, { login, email: "mama@mail.ru" })).statusCode).toBe(201);
+    const fourth = await enrol(app, code, { login: "kid4", email: "mama@mail.ru" });
+    expect(fourth.statusCode).toBe(409);
+    expect(fourth.json().error).toBe("email_taken");
+    const s = (await enrol(app, code, { login: "kid5", email: "kid5@mail.ru" })).json().token as string;
+    expect((await app.inject({ method: "PUT", url: "/account/email", headers: auth(s), payload: { email: "mama@mail.ru" } })).statusCode).toBe(409);
+  });
+
+  it("is needed for a reset link: an unconfirmed address gets none", async () => {
+    const app = await school();
+    const { code } = await setup(app);
+    await enrol(app, code, { login: "anna", email: "anna@mail.ru" }, false);
+    mailer.sent.splice(0);
+    await app.inject({ method: "POST", url: "/auth/forgot", payload: { login: "anna" } });
+    expect(mailer.sent).toHaveLength(0);
+  });
+});
+
 describe("reminders", () => {
   it("sends the evening reminder once, only to students in a group who have not practised today", async () => {
     const app = await school();
     const { code } = await setup(app);
     const anna = (await enrol(app, code, { login: "anna", email: "anna@mail.ru" })).json().account;
     const boris = (await enrol(app, code, { login: "boris", email: "boris@mail.ru" })).json().account;
-    await enrol(app, code, { login: "gleb" });
+    await enrol(app, code, { login: "gleb", email: "gleb@mail.ru" }, false); // not confirmed: no reminders
+    mailer.sent.splice(0);
     await answer(await playerOf(boris.id), new Date("2026-11-30T06:00:00Z")); // 9:00 Moscow today
     await answer(await playerOf(anna.id), new Date("2026-11-29T18:00:00Z")); // yesterday
 
@@ -144,7 +242,7 @@ describe("reminders", () => {
     const { groupId } = await setup(app);
     const admin = await app.inject({ method: "POST", url: "/admin/admins", headers: auth("admin-secret"), payload: { name: "Илья", login: "ilya@school.ru", password: "admin-123" } });
     expect(admin.json().account).toMatchObject({ role: "admin", email: "ilya@school.ru" });
-    await sql.query("UPDATE accounts SET email = 'ksenia@school.ru' WHERE login = 'ksenia'");
+    await confirmAll();
     await sql.query("INSERT INTO group_members (group_id, account_id) SELECT $1, account_id FROM accounts WHERE role <> 'student'", [groupId]);
     expect((await reminders().run(new Date("2026-11-30T16:30:00Z"))).sent).toBe(0);
   });
@@ -316,7 +414,7 @@ describe("pilot metrics", () => {
     const app = await school();
     const { t, groupId, code } = await setup(app);
     await enrol(app, code, { login: "anna", email: "anna@mail.ru" });
-    await enrol(app, code, { login: "boris" });
+    await enrol(app, code, { login: "boris", email: "boris@mail.ru" }, false);
     await reminders().run(new Date("2026-11-30T16:30:00Z"));
     clock = new Date("2026-11-30T18:00:00Z");
     const res = (await app.inject({ url: `/school/groups/${groupId}/metrics`, headers: auth(t) })).json();

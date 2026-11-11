@@ -37,13 +37,13 @@ async function main(): Promise<void> {
   await mkdir(ARTIFACTS, { recursive: true });
   step("Gateway, the built platform, a teacher with two students");
   await startServers({ ADMIN_TOKEN: ADMIN });
-  await api("/admin/teachers", { token: ADMIN, body: { name: "Ксения", login: "ksenia", password: "teach-123" } });
-  await api("/admin/admins", { token: ADMIN, body: { name: "Илья", login: "ilya", password: "admin-123" } });
+  await api("/admin/teachers", { token: ADMIN, body: { name: "Ксения", login: "ksenia", password: "teach-123", email: "ksenia@example.com" } });
+  await api("/admin/admins", { token: ADMIN, body: { name: "Илья", login: "ilya", password: "admin-123", email: "ilya@example.com" } });
   const t = (await api<{ token: string }>("/auth/login", { body: { login: "ksenia", password: "teach-123" } })).token;
   const groupId = (await api<{ group: { group_id: string } }>("/school/groups", { token: t, body: { name: "A1 вечер" } })).group.group_id;
   const code = (await api<{ code: string }>(`/school/groups/${groupId}/invites`, { token: t, body: {} })).code;
-  await api(`/invites/${code}/join`, { body: { name: "Анна", login: "anna", password: "moon-123" } });
-  await api(`/invites/${code}/join`, { body: { name: "Борис", login: "boris", password: "moon-123" } });
+  await api(`/invites/${code}/join`, { body: { name: "Анна", login: "anna", password: "moon-123", email: "anna@example.com" } });
+  await api(`/invites/${code}/join`, { body: { name: "Борис", login: "boris", password: "moon-123", email: "boris@example.com" } });
 
   const anna = (await api<{ students: { id: string; name: string }[] }>("/school/finance", { token: t })).students.find((x) => x.name === "Анна")!;
   /** A lesson that started an hour ago, held, with Анна present: the lessons' attendance charges it. */

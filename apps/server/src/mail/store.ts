@@ -50,14 +50,60 @@ interface AddresseeRow {
   player_id: string;
 }
 const addressee = (r: AddresseeRow): Addressee => ({ accountId: r.account_id, name: r.name, email: r.email, playerId: r.player_id });
-const REACHABLE = "a.role = 'student' AND a.email IS NOT NULL AND a.reminders";
+const REACHABLE = "a.role = 'student' AND a.email IS NOT NULL AND a.email_verified_at IS NOT NULL AND a.reminders";
 
 /** Addresses, the reminders sent and password reset links (schema: migrations/006_email.sql). */
 export class EmailStore {
   constructor(private readonly sql: Sql) {}
 
+  /** A different address must be confirmed again; giving the same one keeps the confirmation. */
   async setEmail(accountId: string, email: string | null): Promise<void> {
-    await this.sql.query("UPDATE accounts SET email = $2 WHERE account_id = $1", [accountId, email]);
+    await this.sql.query(
+      `UPDATE accounts SET email_verified_at = CASE WHEN email IS NOT DISTINCT FROM $2 THEN email_verified_at END, email = $2 WHERE account_id = $1`,
+      [accountId, email],
+    );
+  }
+
+  /** How many accounts other than this one use the address: one inbox must not open endless accounts. */
+  async accountsWith(email: string, except?: string): Promise<number> {
+    const { rows } = await this.sql.query<{ n: number }>("SELECT count(*)::int AS n FROM accounts WHERE email = $1 AND account_id IS DISTINCT FROM $2", [email, except ?? null]);
+    return rows[0]?.n ?? 0;
+  }
+
+  /** A new confirmation link for the address; only its hash is stored. */
+  async createVerification(accountId: string, email: string, now: Date, expiresAt: Date): Promise<string> {
+    const token = randomBytes(24).toString("base64url");
+    await this.sql.query("INSERT INTO email_verifications (token_hash, account_id, email, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)", [
+      sha256(token),
+      accountId,
+      email,
+      now,
+      expiresAt,
+    ]);
+    return token;
+  }
+
+  async verificationsSince(accountId: string, since: Date): Promise<number> {
+    const { rows } = await this.sql.query<{ n: number }>("SELECT count(*)::int AS n FROM email_verifications WHERE account_id = $1 AND created_at >= $2", [accountId, since]);
+    return rows[0]?.n ?? 0;
+  }
+
+  /**
+   * Confirms the address the link was sent to, if the account still has it. Opening the link
+   * again is fine (mail scanners open links too); returns the account while the link is valid.
+   */
+  async verify(token: string, now: Date): Promise<string | undefined> {
+    const { rows } = await this.sql.query<{ account_id: string; email: string }>(
+      "UPDATE email_verifications SET used_at = COALESCE(used_at, $2) WHERE token_hash = $1 AND expires_at > $2 RETURNING account_id, email",
+      [sha256(token), now],
+    );
+    const v = rows[0];
+    if (!v) return undefined;
+    const { rows: done } = await this.sql.query<{ account_id: string }>(
+      "UPDATE accounts SET email_verified_at = COALESCE(email_verified_at, $3) WHERE account_id = $1 AND email = $2 RETURNING account_id",
+      [v.account_id, v.email, now],
+    );
+    return done[0]?.account_id;
   }
 
   async setReminders(accountId: string, on: boolean): Promise<void> {
@@ -69,10 +115,10 @@ export class EmailStore {
     return rows[0];
   }
 
-  /** Accounts that use this address or this login, for "Забыли пароль?". At most a few: a family may share one address. */
+  /** Accounts with a confirmed address that use this address or this login, for "Забыли пароль?". At most a few: a family may share one address. */
   async byLoginOrEmail(s: string): Promise<{ accountId: string; name: string; login: string; email: string }[]> {
     const { rows } = await this.sql.query<{ account_id: string; name: string; login: string; email: string }>(
-      "SELECT account_id, name, login, email FROM accounts WHERE email IS NOT NULL AND (login = $1 OR email = $1) ORDER BY created_at LIMIT 5",
+      "SELECT account_id, name, login, email FROM accounts WHERE email IS NOT NULL AND email_verified_at IS NOT NULL AND (login = $1 OR email = $1) ORDER BY created_at LIMIT 5",
       [s],
     );
     return rows.map((r) => ({ accountId: r.account_id, name: r.name, login: r.login, email: r.email }));
