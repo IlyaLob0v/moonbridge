@@ -15,6 +15,7 @@ import type { PlatformRegistry } from "./lti/platforms.js";
 import type { ProgressStore } from "./progress.js";
 import type { ScoreStore } from "./scores.js";
 import type { FileStore } from "./school/files.js";
+import type { MailDeps } from "./school/email-routes.js";
 import { schoolRoutes } from "./school/routes.js";
 import type { SchoolStore } from "./school/store.js";
 import type { Session, SessionTokens } from "./session.js";
@@ -36,7 +37,7 @@ export interface AppDeps {
   progress: ProgressStore;
   toolKeys: ToolKeys;
   /** Accounts, groups, homework and hand-in files. Without it the gateway serves guests and LMS launches only. */
-  school?: { store: SchoolStore; files: FileStore; now?: () => Date };
+  school?: { store: SchoolStore; files: FileStore; mail?: MailDeps; now?: () => Date };
 }
 
 declare module "fastify" {
@@ -142,6 +143,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       files: d.school.files,
       errorLabel: (id) => live.bundle.taxonomy.error_types.find((t) => t.id === id)?.label.ru,
       content: { live, ...(d.fetchSheet ? { fetch: d.fetchSheet } : {}) },
+      ...(d.school.mail ? { mail: d.school.mail } : {}),
       ...(d.school.now ? { now: d.school.now } : {}),
     });
   }

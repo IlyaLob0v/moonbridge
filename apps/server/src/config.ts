@@ -23,6 +23,10 @@ export interface ServerConfig {
   trustProxy: boolean;
   /** Homework files in an S3-compatible bucket (Yandex Object Storage); unset = on disk in uploadDir. */
   s3?: { endpoint: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string };
+  /** E-mail through Yandex Cloud Postbox; unset = e-mails go to the log (development, pnpm demo). */
+  postbox?: { endpoint: string; region: string; accessKeyId: string; secretAccessKey: string; from: string };
+  /** Moscow hour the "смена ждёт" evening reminder goes out from. */
+  reminderEveningHour: number;
   /** Allows POST /session/guest for local play without an LMS. Never in production. */
   allowGuest: boolean;
   lrs?: { endpoint: string; key: string; secret: string };
@@ -83,6 +87,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
           },
         }
       : {}),
+    ...(env.POSTBOX_ACCESS_KEY_ID
+      ? {
+          postbox: {
+            endpoint: (env.POSTBOX_ENDPOINT ?? "https://postbox.cloud.yandex.net").replace(/\/$/, ""),
+            region: env.POSTBOX_REGION ?? "ru-central1",
+            accessKeyId: env.POSTBOX_ACCESS_KEY_ID,
+            secretAccessKey: required(env, "POSTBOX_SECRET_ACCESS_KEY"),
+            from: required(env, "MAIL_FROM"),
+          },
+        }
+      : {}),
+    reminderEveningHour: Number(env.REMINDER_EVENING_HOUR ?? 19),
     allowGuest: !production && env.ALLOW_GUEST !== "false",
     ...(env.LRS_ENDPOINT
       ? { lrs: { endpoint: env.LRS_ENDPOINT, key: required(env, "LRS_KEY"), secret: required(env, "LRS_SECRET") } }

@@ -295,3 +295,72 @@ function errorTrends(attempts: MetricAttempt[], weeks: WeekMetrics[], weekOf: (a
   const room = trends.filter((t) => t.firstAccuracy < 100);
   return { improved: room.filter((t) => t.change > 0).length, compared: room.length, trends };
 }
+
+// ---------- Reminders by e-mail: how many brought the student back.
+
+/** A click followed by an answer within this long counts as a return to practice. */
+export const RETURN_WINDOW_MS = 2 * 3600_000;
+
+export type ReminderKind = "evening" | "deadline" | "grade";
+
+export interface EmailSent {
+  playerId: string;
+  kind: ReminderKind;
+  sentAt: Date;
+  clickedAt: Date | null;
+}
+
+export interface EmailCounts {
+  sent: number;
+  /** Opened the platform with the e-mail's button. */
+  clicked: number;
+  /** Clicked and answered at least one task within RETURN_WINDOW_MS after. */
+  practiced: number;
+}
+
+export interface EmailMetrics extends EmailCounts {
+  students: number;
+  withEmail: number;
+  unsubscribed: number;
+  byKind: Record<ReminderKind, EmailCounts>;
+  weeks: (EmailCounts & { from: string })[];
+}
+
+/**
+ * Daily e-mails often land in "Промоакции", so the pilot checks whether they work at all:
+ * sent, opened through the button, and followed by practice.
+ */
+export function emailMetrics(input: {
+  emails: EmailSent[];
+  attempts: MetricAttempt[];
+  from: Date;
+  now: Date;
+  students: number;
+  withEmail: number;
+  unsubscribed: number;
+}): EmailMetrics {
+  const byPlayer = new Map<string, number[]>();
+  for (const a of input.attempts) byPlayer.set(a.playerId, [...(byPlayer.get(a.playerId) ?? []), a.answeredAt.getTime()]);
+  const practiced = (e: EmailSent) => {
+    if (!e.clickedAt) return false;
+    const at = e.clickedAt.getTime();
+    return (byPlayer.get(e.playerId) ?? []).some((t) => t >= at && t <= at + RETURN_WINDOW_MS);
+  };
+  const count = (list: EmailSent[]): EmailCounts => ({ sent: list.length, clicked: list.filter((e) => e.clickedAt).length, practiced: list.filter(practiced).length });
+  const weekCount = Math.max(1, Math.ceil((input.now.getTime() - input.from.getTime()) / WEEK_MS));
+  return {
+    ...count(input.emails),
+    students: input.students,
+    withEmail: input.withEmail,
+    unsubscribed: input.unsubscribed,
+    byKind: {
+      evening: count(input.emails.filter((e) => e.kind === "evening")),
+      deadline: count(input.emails.filter((e) => e.kind === "deadline")),
+      grade: count(input.emails.filter((e) => e.kind === "grade")),
+    },
+    weeks: Array.from({ length: weekCount }, (_, w) => {
+      const start = input.from.getTime() + w * WEEK_MS;
+      return { from: moscowDay(new Date(start)), ...count(input.emails.filter((e) => e.sentAt.getTime() >= start && e.sentAt.getTime() < start + WEEK_MS)) };
+    }),
+  };
+}

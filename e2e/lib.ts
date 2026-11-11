@@ -11,12 +11,15 @@ export const WEB = "http://localhost:4173";
 export const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "ru-RU" } as const;
 
 const children: ChildProcess[] = [];
+const logs = new Map<string, string>();
+/** Everything a server printed so far: the gateway without Postbox prints its e-mails there. */
+export const logOf = (name: string) => logs.get(name) ?? "";
 export function start(name: string, cmd: string, args: string[], env: Record<string, string> = {}): void {
   const child = spawn(cmd, args, { cwd: ROOT, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"], detached: true });
-  let log = "";
-  child.stdout!.on("data", (b) => (log += b));
-  child.stderr!.on("data", (b) => (log += b));
-  child.on("exit", (code) => code && code !== 143 && console.error(`${name} exited with ${code}\n${log.slice(-2000)}`));
+  logs.set(name, "");
+  child.stdout!.on("data", (b) => logs.set(name, logOf(name) + b));
+  child.stderr!.on("data", (b) => logs.set(name, logOf(name) + b));
+  child.on("exit", (code) => code && code !== 143 && console.error(`${name} exited with ${code}\n${logOf(name).slice(-2000)}`));
   children.push(child);
 }
 

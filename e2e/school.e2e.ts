@@ -18,11 +18,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readXlsx, SHEETS, writeXlsx, type Workbook } from "@moonbridge/content/sheet";
 import { chromium, type Page } from "playwright";
-import { ARTIFACTS, check, finishEpisode, GATEWAY, noSideScroll, PHONE, startServers, step, stopServers, WEB } from "./lib.js";
+import { ARTIFACTS, check, finishEpisode, GATEWAY, logOf, noSideScroll, PHONE, startServers, step, stopServers, WEB } from "./lib.js";
 
 const EPISODE = "A1_NiceToMeetYou_01_check_in";
 const ADMIN = "e2e-admin-token";
-const STUDENT = { name: "Анна", login: "anna.k", password: "moon-123" };
+const STUDENT = { name: "Анна", login: "anna.k", password: "moon-123", email: "anna.k@example.com" };
 
 /** A Moscow date-time for an <input type="datetime-local">, `days` from now at 18:00. */
 function moscowInput(days: number): string {
@@ -96,6 +96,7 @@ async function main(): Promise<void> {
     await joinForm.getByLabel("Имя").fill(STUDENT.name);
     await joinForm.getByLabel("Логин").fill(STUDENT.login);
     await joinForm.getByLabel("Пароль").fill(STUDENT.password);
+    await joinForm.getByLabel("E-mail", { exact: true }).fill(STUDENT.email);
     await joinForm.getByRole("button", { name: "Вступить в группу" }).click();
     await page.getByRole("heading", { name: /Анна/ }).waitFor();
     check(page.url() === `${WEB}/`, "the student lands on Today");
@@ -103,6 +104,7 @@ async function main(): Promise<void> {
     check(/A1 вечер/.test(await lesson.innerText()), "Today shows the next lesson");
     check((await lesson.locator("a.call").getAttribute("href")) === "https://telemost.yandex.ru/j/12345", "with the call link");
     check(/Расскажи о себе/.test(await page.locator('[data-card="homework"]').innerText()), "and the homework");
+    check((await page.locator('[data-card="email"]').innerText()).includes(STUDENT.email), "and the address reminders go to");
     check(await noSideScroll(page), "Today fits a 390 px screen");
     await page.screenshot({ path: `${ARTIFACTS}student-today.png`, fullPage: true });
 
@@ -222,6 +224,32 @@ async function main(): Promise<void> {
     await graded.waitFor();
     check(/I am from/.test(await graded.innerText()), "and the grade with the teacher's comment in the homework");
     await page.screenshot({ path: `${ARTIFACTS}graded.png` });
+
+    step("A forgotten password, by e-mail");
+    await page.goto(WEB);
+    await page.getByRole("button", { name: "Выйти" }).click();
+    await page.locator('[data-form="sign-in"]').getByRole("button", { name: "Забыли пароль?" }).click();
+    const forgot = page.locator('[data-form="forgot"]');
+    await forgot.getByLabel("Логин или e-mail").fill(STUDENT.email);
+    await forgot.getByRole("button", { name: "Прислать ссылку" }).click();
+    await page.locator('[data-form="forgot-sent"]').waitFor();
+    let link: string | undefined;
+    for (let i = 0; i < 50 && !link; i++) {
+      link = /http:\/\/localhost:4173\/reset\/[\w-]+/.exec(logOf("gateway"))?.[0];
+      if (!link) await page.waitForTimeout(100);
+    }
+    check(link, "the gateway sends the reset link to her address (printed to the log without Postbox)");
+    await page.screenshot({ path: `${ARTIFACTS}forgot-sent.png` });
+    await page.goto(link!);
+    const reset = page.locator('[data-form="reset"]');
+    await reset.getByLabel("Новый пароль").fill("moon-456");
+    await reset.getByRole("button", { name: "Сохранить и войти" }).click();
+    await page.getByRole("heading", { name: /Анна/ }).waitFor();
+    check(page.url() === `${WEB}/`, "the link sets a new password and opens Today");
+    await page.goto(link!);
+    await page.locator('[data-form="reset-failed"]').waitFor();
+    check(true, "the link works only once");
+    await page.goto(WEB);
 
     step("The teacher updates the course from the sheet");
     await teacher.goto(`${WEB}/teacher`);

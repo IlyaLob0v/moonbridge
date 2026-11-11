@@ -2,10 +2,11 @@ import type { ContentBundle } from "@moonbridge/content";
 import { Learner } from "./core/learner.js";
 import { Api, ApiError, GatewaySink, localSessionStorage, renewGuest, SignedOutError, startSession, type Dashboard, type SessionInfo } from "./net/api.js";
 import { ProgressBackup } from "./net/backup.js";
-import { askProfile, joinGroup, loadProfile, saveProfile, signIn, signOut } from "./platform/login.js";
+import { askProfile, joinGroup, loadProfile, resetPassword, saveProfile, signIn, signOut } from "./platform/login.js";
 import { loadDashboard, renderHomework } from "./platform/school.js";
 import { renderStudentReport } from "./platform/report.js";
 import { renderContent } from "./platform/content.js";
+import { emailCard } from "./platform/email.js";
 import { feedbackBox } from "./platform/feedback.js";
 import { renderMetrics } from "./platform/metrics.js";
 import { renderTeacher } from "./platform/teacher.js";
@@ -63,6 +64,12 @@ async function boot(): Promise<void> {
   const invite = /^\/join\/([A-Za-z0-9]+)$/.exec(location.pathname)?.[1];
   if (invite) {
     await joinGroup(root, api, localSessionStorage, invite);
+    history.replaceState(null, "", "/");
+  }
+  // The link from a password reset e-mail: a new password, then straight in.
+  const reset = /^\/reset\/([\w-]+)$/.exec(location.pathname)?.[1];
+  if (reset) {
+    await resetPassword(root, api, localSessionStorage, reset);
     history.replaceState(null, "", "/");
   }
   if (!localSessionStorage.load() && !location.hash.includes("session=")) {
@@ -172,7 +179,19 @@ async function boot(): Promise<void> {
       profile,
       learner,
       kv,
-      ...(session.account ? { school: { dashboard: board, role: session.account.role, onSignOut, feedback: feedback(), ...(week ? { week } : {}) } } : {}),
+      ...(session.account
+        ? {
+            school: {
+              dashboard: board,
+              role: session.account.role,
+              onSignOut,
+              feedback: feedback(),
+              ...(week ? { week } : {}),
+              // Online only: the address is the gateway's, not this phone's.
+              ...(board && session.token ? { email: emailCard({ api, token: session.token, account: board.account }) } : {}),
+            },
+          }
+        : {}),
     });
     cacheLoadedAssets();
   };

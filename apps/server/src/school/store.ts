@@ -10,6 +10,10 @@ export interface Account {
   name: string;
   login: string;
   playerId: string;
+  /** Where reminders and password reset links go; null until the person gives one. */
+  email: string | null;
+  /** False once the person unsubscribed from reminders. */
+  reminders: boolean;
 }
 
 /** A weekly lesson slot, Moscow time. */
@@ -95,7 +99,7 @@ function newId(prefix: string, length = 16): string {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, length)}`;
 }
 
-const ACCOUNT = "a.account_id, a.role, a.name, a.login, a.player_id";
+const ACCOUNT = "a.account_id, a.role, a.name, a.login, a.player_id, a.email, a.reminders";
 const GROUP = "g.group_id, g.teacher_id, t.name AS teacher_name, g.name, g.call_url, g.schedule";
 const HOMEWORK = "h.homework_id, h.group_id, h.title, h.description, h.due_at, h.needs_file, h.created_at";
 const SUBMISSION =
@@ -107,6 +111,8 @@ interface AccountRow {
   name: string;
   login: string;
   player_id: string;
+  email: string | null;
+  reminders: boolean;
 }
 interface GroupRow {
   group_id: string;
@@ -140,7 +146,15 @@ interface SubmissionRow {
   reviewed_at: Date | null;
 }
 
-const account = (r: AccountRow): Account => ({ accountId: r.account_id, role: r.role, name: r.name, login: r.login, playerId: r.player_id });
+const account = (r: AccountRow): Account => ({
+  accountId: r.account_id,
+  role: r.role,
+  name: r.name,
+  login: r.login,
+  playerId: r.player_id,
+  email: r.email,
+  reminders: r.reminders,
+});
 const group = (r: GroupRow): Group => ({
   groupId: r.group_id,
   teacherId: r.teacher_id,
@@ -178,12 +192,12 @@ const submission = (r: SubmissionRow): Submission => ({
 export class SchoolStore {
   constructor(private readonly sql: Sql) {}
 
-  async createAccount(a: { role: Role; name: string; login: string; passwordHash: string; playerId?: string }): Promise<Account> {
+  async createAccount(a: { role: Role; name: string; login: string; passwordHash: string; playerId?: string; email?: string | null }): Promise<Account> {
     const { rows } = await this.sql.query<AccountRow>(
-      `INSERT INTO accounts (account_id, role, name, login, password_hash, player_id) VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO accounts (account_id, role, name, login, password_hash, player_id, email) VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (login) DO NOTHING
-       RETURNING account_id, role, name, login, player_id`,
-      [newId("acc"), a.role, a.name, a.login, a.passwordHash, a.playerId ?? newId("player")],
+       RETURNING account_id, role, name, login, player_id, email, reminders`,
+      [newId("acc"), a.role, a.name, a.login, a.passwordHash, a.playerId ?? newId("player"), a.email ?? null],
     );
     if (!rows[0]) throw new LoginTakenError();
     return account(rows[0]);

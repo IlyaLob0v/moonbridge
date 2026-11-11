@@ -7,6 +7,10 @@ export interface AccountInfo {
   name: string;
   role: "student" | "teacher";
   login: string;
+  /** Where reminders and password reset links go; null until the person gives one. Missing in sessions saved before e-mail existed. */
+  email?: string | null;
+  /** False once the person unsubscribed from reminders. */
+  reminders?: boolean;
 }
 
 /** What the gateway answers to a sign-in or a join. */
@@ -89,10 +93,26 @@ export interface FeedbackView {
   at: string;
 }
 
+/** Reminders by e-mail: sent, opened from the button, followed by practice within 2 hours. */
+export interface EmailCounts {
+  sent: number;
+  clicked: number;
+  practiced: number;
+}
+export interface EmailMetrics extends EmailCounts {
+  students: number;
+  withEmail: number;
+  unsubscribed: number;
+  byKind: Record<"evening" | "deadline" | "grade", EmailCounts>;
+  weeks: (EmailCounts & { from: string })[];
+}
+
 export interface GroupMetrics {
   group: { id: string; name: string };
   pilot_from: string | null;
   metrics: PilotMetrics;
+  /** Null when the gateway has no e-mail. */
+  email?: EmailMetrics | null;
   feedback: FeedbackView[];
 }
 
@@ -235,7 +255,30 @@ export class Api {
   }
 
   authOptions() {
-    return this.json<{ guest: boolean }>("/auth/options");
+    return this.json<{ guest: boolean; password_reset?: boolean }>("/auth/options");
+  }
+
+  /** "Забыли пароль?": the gateway answers the same whether or not the login exists. */
+  forgotPassword(login: string) {
+    return this.json<{ ok: true; message: string }>("/auth/forgot", { method: "POST", body: JSON.stringify({ login }) });
+  }
+
+  /** Whether a reset link from an e-mail still works. */
+  checkReset(token: string) {
+    return this.json<{ ok: true }>(`/auth/reset/${encodeURIComponent(token)}`);
+  }
+
+  /** Sets the new password from a reset link and signs in. */
+  resetByLink(token: string, password: string) {
+    return this.json<SignedIn>("/auth/reset", { method: "POST", body: JSON.stringify({ token, password }) });
+  }
+
+  setEmail(token: string, email: string | null) {
+    return this.json<{ account: AccountInfo }>("/account/email", { method: "PUT", body: JSON.stringify({ email }) }, token);
+  }
+
+  setReminders(token: string, on: boolean) {
+    return this.json<{ account: AccountInfo }>("/account/reminders", { method: "PUT", body: JSON.stringify({ on }) }, token);
   }
 
   login(login: string, password: string) {
@@ -247,7 +290,7 @@ export class Api {
   }
 
   /** Joins the invitation's group: a new student account, or the signed-in one when `token` is an account's. */
-  join(code: string, fields: { name: string; login: string; password: string } | undefined, token?: string) {
+  join(code: string, fields: { name: string; login: string; password: string; email?: string } | undefined, token?: string) {
     return this.json<SignedIn & { group: GroupView }>(`/invites/${encodeURIComponent(code)}/join`, { method: "POST", body: JSON.stringify(fields ?? {}) }, token);
   }
 
