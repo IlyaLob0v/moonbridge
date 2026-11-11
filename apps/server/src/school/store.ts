@@ -1,4 +1,4 @@
-import type { Attempt } from "@moonbridge/xapi";
+import type { Attempt, EpisodeResult } from "@moonbridge/xapi";
 import type { Sql } from "../db/sql.js";
 import type { MetricAttempt } from "./metrics.js";
 
@@ -37,6 +37,13 @@ export interface Homework {
   description: string;
   dueAt: Date | null;
   needsFile: boolean;
+  /** The Moonbridge unit to play, for a unit given as homework. */
+  moduleId: string | null;
+  /** One student of the group, or null for the whole group. */
+  accountId: string | null;
+  assigneeName: string | null;
+  /** A unit's result becomes the grade without the teacher. */
+  autoGrade: boolean;
   createdAt: Date;
 }
 
@@ -45,10 +52,13 @@ export interface Submission {
   homeworkId: string;
   accountId: string;
   studentName: string;
-  fileKey: string;
-  fileName: string;
-  mime: string;
-  size: number;
+  /** Null for a unit's result, which has a score instead of a file. */
+  fileKey: string | null;
+  fileName: string | null;
+  mime: string | null;
+  size: number | null;
+  /** A unit's result: tasks right on the first try, out of all the unit's tasks. */
+  score: { right: number; total: number } | null;
   submittedAt: Date;
   review: Review | null;
 }
@@ -97,9 +107,10 @@ function newId(prefix: string, length = 16): string {
 
 const ACCOUNT = "a.account_id, a.role, a.name, a.login, a.player_id";
 const GROUP = "g.group_id, g.teacher_id, t.name AS teacher_name, g.name, g.call_url, g.schedule";
-const HOMEWORK = "h.homework_id, h.group_id, h.title, h.description, h.due_at, h.needs_file, h.created_at";
+const HOMEWORK =
+  "h.homework_id, h.group_id, h.title, h.description, h.due_at, h.needs_file, h.module_id, h.account_id, (SELECT x.name FROM accounts x WHERE x.account_id = h.account_id) AS assignee_name, h.auto_grade, h.created_at";
 const SUBMISSION =
-  "s.submission_id, s.homework_id, s.account_id, a.name AS student_name, s.file_key, s.file_name, s.mime, s.size, s.submitted_at, s.grade, s.teacher_comment, s.reviewed_at";
+  "s.submission_id, s.homework_id, s.account_id, a.name AS student_name, s.file_key, s.file_name, s.mime, s.size, s.score_right, s.score_total, s.submitted_at, s.grade, s.teacher_comment, s.reviewed_at";
 
 interface AccountRow {
   account_id: string;
@@ -123,6 +134,10 @@ interface HomeworkRow {
   description: string;
   due_at: Date | null;
   needs_file: boolean;
+  module_id: string | null;
+  account_id: string | null;
+  assignee_name: string | null;
+  auto_grade: boolean;
   created_at: Date;
 }
 interface SubmissionRow {
@@ -130,10 +145,12 @@ interface SubmissionRow {
   homework_id: string;
   account_id: string;
   student_name: string;
-  file_key: string;
-  file_name: string;
-  mime: string;
-  size: string | number;
+  file_key: string | null;
+  file_name: string | null;
+  mime: string | null;
+  size: string | number | null;
+  score_right: number | null;
+  score_total: number | null;
   submitted_at: Date;
   grade: number | null;
   teacher_comment: string | null;
@@ -156,6 +173,10 @@ const homework = (r: HomeworkRow): Homework => ({
   description: r.description,
   dueAt: r.due_at,
   needsFile: r.needs_file,
+  moduleId: r.module_id,
+  accountId: r.account_id,
+  assigneeName: r.assignee_name,
+  autoGrade: r.auto_grade,
   createdAt: r.created_at,
 });
 const submission = (r: SubmissionRow): Submission => ({
@@ -166,7 +187,8 @@ const submission = (r: SubmissionRow): Submission => ({
   fileKey: r.file_key,
   fileName: r.file_name,
   mime: r.mime,
-  size: Number(r.size),
+  size: r.size === null ? null : Number(r.size),
+  score: r.score_right !== null && r.score_total !== null ? { right: r.score_right, total: r.score_total } : null,
   submittedAt: r.submitted_at,
   review: r.reviewed_at && r.grade !== null ? { grade: r.grade, comment: r.teacher_comment ?? "", reviewedAt: r.reviewed_at } : null,
 });
@@ -288,13 +310,25 @@ export class SchoolStore {
     return rows[0] && this.group(rows[0].group_id);
   }
 
-  async createHomework(h: { groupId: string; title: string; description: string; dueAt: Date | null; needsFile: boolean }): Promise<Homework> {
-    const { rows } = await this.sql.query<HomeworkRow>(
-      `INSERT INTO homework (homework_id, group_id, title, description, due_at, needs_file) VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING homework_id, group_id, title, description, due_at, needs_file, created_at`,
-      [newId("hw", 12), h.groupId, h.title, h.description, h.dueAt, h.needsFile],
+  async createHomework(h: {
+    groupId: string;
+    title: string;
+    description: string;
+    dueAt: Date | null;
+    needsFile: boolean;
+    moduleId?: string | null;
+    accountId?: string | null;
+    autoGrade?: boolean;
+    /** A unit counts the episodes played from this moment on. */
+    createdAt?: Date;
+  }): Promise<Homework> {
+    const homeworkId = newId("hw", 12);
+    await this.sql.query(
+      `INSERT INTO homework (homework_id, group_id, title, description, due_at, needs_file, module_id, account_id, auto_grade, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, now()))`,
+      [homeworkId, h.groupId, h.title, h.description, h.dueAt, h.needsFile, h.moduleId ?? null, h.accountId ?? null, h.autoGrade ?? false, h.createdAt ?? null],
     );
-    return homework(rows[0]!);
+    return (await this.homework(homeworkId))!;
   }
 
   async homework(homeworkId: string): Promise<Homework | undefined> {
@@ -302,12 +336,16 @@ export class SchoolStore {
     return rows[0] && homework(rows[0]);
   }
 
-  /** Homework of these groups, the nearest deadline first, then the newest. */
-  async homeworkOf(groupIds: string[]): Promise<Homework[]> {
+  /**
+   * Homework of these groups, the nearest deadline first, then the newest. With `forStudent`,
+   * only what that student has to do: the group's homework and their own, not a classmate's.
+   */
+  async homeworkOf(groupIds: string[], forStudent?: string): Promise<Homework[]> {
     if (!groupIds.length) return [];
     const { rows } = await this.sql.query<HomeworkRow>(
-      `SELECT ${HOMEWORK} FROM homework h WHERE h.group_id = ANY($1::text[]) ORDER BY h.due_at ASC NULLS LAST, h.created_at DESC`,
-      [groupIds],
+      `SELECT ${HOMEWORK} FROM homework h WHERE h.group_id = ANY($1::text[]) AND ($2::text IS NULL OR h.account_id IS NULL OR h.account_id = $2)
+       ORDER BY h.due_at ASC NULLS LAST, h.created_at DESC`,
+      [groupIds, forStudent ?? null],
     );
     return rows.map(homework);
   }
@@ -325,6 +363,21 @@ export class SchoolStore {
     );
     const replaced = before.rows[0]?.file_key;
     return { submission: (await this.submission(rows[0]!.submission_id))!, ...(replaced && replaced !== s.fileKey ? { replacedKey: replaced } : {}) };
+  }
+
+  /**
+   * Records a unit's result as the student's hand-in, or replaces an earlier result the teacher
+   * has not graded yet. A graded result stays as it is.
+   */
+  async submitUnit(s: { homeworkId: string; accountId: string; right: number; total: number; at: Date }): Promise<Submission | undefined> {
+    const { rows } = await this.sql.query<{ submission_id: string }>(
+      `INSERT INTO submissions (submission_id, homework_id, account_id, score_right, score_total, submitted_at) VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (homework_id, account_id) DO UPDATE SET score_right = EXCLUDED.score_right, score_total = EXCLUDED.score_total, submitted_at = EXCLUDED.submitted_at
+       WHERE submissions.reviewed_at IS NULL
+       RETURNING submission_id`,
+      [newId("sub", 12), s.homeworkId, s.accountId, s.right, s.total, s.at],
+    );
+    return rows[0] && this.submission(rows[0].submission_id);
   }
 
   async submission(submissionId: string): Promise<Submission | undefined> {
@@ -462,6 +515,34 @@ export class SchoolStore {
 
   async setPilotFrom(groupId: string, date: string): Promise<void> {
     await this.sql.query("UPDATE school_groups SET pilot_from = $2::date WHERE group_id = $1", [groupId, date]);
+  }
+
+  async accountByPlayer(playerId: string): Promise<Account | undefined> {
+    const { rows } = await this.sql.query<AccountRow>(`SELECT ${ACCOUNT} FROM accounts a WHERE a.player_id = $1`, [playerId]);
+    return rows[0] && account(rows[0]);
+  }
+
+  /** Keeps finished episodes; a statement already kept is skipped. */
+  async recordEpisodeResults(results: EpisodeResult[]): Promise<void> {
+    if (!results.length) return;
+    await this.sql.query(
+      `INSERT INTO episode_results (statement_id, player_id, episode_id, module_id, first_try_right, tasks, finished_at)
+       SELECT (r->>'statementId')::uuid, r->>'playerId', r->>'episodeId', r->>'moduleId', (r->>'right')::int, (r->>'tasks')::int, (r->>'finishedAt')::timestamptz
+       FROM jsonb_array_elements($1::jsonb) AS t(r)
+       ON CONFLICT (statement_id) DO NOTHING`,
+      [JSON.stringify(results)],
+    );
+  }
+
+  /** The best play of each episode of a unit since `since`: the most right on the first try, the earliest of equals. */
+  async bestEpisodeResults(playerId: string, moduleId: string, since: Date): Promise<{ episodeId: string; right: number; tasks: number; finishedAt: Date }[]> {
+    const { rows } = await this.sql.query<{ episode_id: string; first_try_right: number; tasks: number; finished_at: Date }>(
+      `SELECT DISTINCT ON (episode_id) episode_id, first_try_right, tasks, finished_at FROM episode_results
+       WHERE player_id = $1 AND module_id = $2 AND finished_at >= $3
+       ORDER BY episode_id, (CASE WHEN tasks = 0 THEN 1 ELSE first_try_right::float / tasks END) DESC, finished_at`,
+      [playerId, moduleId, since],
+    );
+    return rows.map((r) => ({ episodeId: r.episode_id, right: r.first_try_right, tasks: r.tasks, finishedAt: new Date(r.finished_at) }));
   }
 
   async addFeedback(f: { accountId: string; page: string; message: string; userAgent: string }): Promise<string> {

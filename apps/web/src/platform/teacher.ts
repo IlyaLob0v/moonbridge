@@ -2,7 +2,7 @@ import { ApiError, type Api, type Dashboard, type GroupProgress, type GroupView,
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
 import { weekDots } from "./report.js";
-import { fileSize, loadDashboard, scheduleText, when } from "./school.js";
+import { fileSize, loadDashboard, scheduleText, scoreText, when } from "./school.js";
 
 // The teacher's cabinet: the files waiting for a grade, then each group with its students'
 // week (days with practice, first-try accuracy, the most frequent error), the invitation
@@ -26,7 +26,7 @@ export function moscowInputToIso(value: string): string | null {
   return new Date(Date.UTC(y, mo - 1, d, h, mi) - MSK_MS).toISOString();
 }
 
-function messageOf(e: unknown): string {
+export function messageOf(e: unknown): string {
   return e instanceof ApiError && e.userMessage ? e.userMessage : "Не получилось. Проверьте интернет и попробуйте ещё раз.";
 }
 
@@ -54,6 +54,12 @@ export async function renderTeacher(root: HTMLElement, d: TeacherDeps): Promise<
       el(
         "section",
         { class: "card content-link" },
+        el("div", {}, el("h2", {}, "Каталог уроков"), el("p", { class: "muted" }, "Юниты Moonbridge: задать группе или ученику как домашку со сроком.")),
+        el("a", { class: "button", href: "/teacher/catalog", "data-link": "", "data-catalog-link": "" }, "Открыть"),
+      ),
+      el(
+        "section",
+        { class: "card content-link" },
         el("div", {}, el("h2", {}, "Контент курса"), el("p", { class: "muted" }, "Юниты, задания и эпизоды Moonbridge — в таблице.")),
         el("a", { class: "button", href: "/teacher/content", "data-link": "" }, "Открыть"),
       ),
@@ -64,7 +70,7 @@ export async function renderTeacher(root: HTMLElement, d: TeacherDeps): Promise<
 /** Files waiting for a grade, the oldest first: listen or look, give 1–5 and a comment. */
 function reviewQueue(queue: QueueItem[], d: TeacherDeps, rerender: () => void): HTMLElement {
   if (!queue.length) {
-    return el("section", { class: "card review-queue", "data-queue": "0" }, el("h2", {}, "Проверка"), el("p", { class: "muted" }, "Все сданные файлы проверены."));
+    return el("section", { class: "card review-queue", "data-queue": "0" }, el("h2", {}, "Проверка"), el("p", { class: "muted" }, "Всё сданное проверено."));
   }
   return el(
     "section",
@@ -82,11 +88,11 @@ function reviewItem(s: QueueItem, d: TeacherDeps, rerender: () => void): HTMLEle
     open.disabled = true;
     try {
       const url = await d.api.submissionLink(d.token, s.submission_id);
-      const kind = s.mime.split("/")[0];
+      const kind = (s.mime ?? "").split("/")[0];
       // Recordings and photos open right here; anything else downloads.
       const media =
         kind === "audio" ? el("audio", { controls: "", src: url, preload: "metadata" }) :
-        kind === "image" ? el("img", { src: url, alt: s.file_name }) :
+        kind === "image" ? el("img", { src: url, alt: s.file_name ?? "" }) :
         kind === "video" ? el("video", { controls: "", src: url, preload: "metadata", playsinline: "" }) :
         undefined;
       preview.replaceChildren(...(media ? [media] : []), el("a", { href: url, class: "muted" }, `Скачать ${s.file_name}`));
@@ -96,14 +102,16 @@ function reviewItem(s: QueueItem, d: TeacherDeps, rerender: () => void): HTMLEle
     }
   });
   const grades = el("div", { class: "grades", role: "radiogroup", "aria-label": "Оценка" });
-  let grade = 0;
-  const save = el("button", { class: "primary", type: "submit", disabled: "" }, "Сохранить оценку") as HTMLButtonElement;
+  // A unit's result comes with the grade its score suggests, already chosen: one tap confirms it.
+  let grade = s.score?.suggested_grade ?? 0;
+  const save = el("button", { class: "primary", type: "submit", ...(grade ? {} : { disabled: "" }) }, grade ? "Подтвердить оценку" : "Сохранить оценку") as HTMLButtonElement;
   for (let g = 5; g >= 1; g--) {
-    const b = el("button", { type: "button", class: "grade", role: "radio", "aria-checked": "false", "data-grade": String(g) }, String(g)) as HTMLButtonElement;
+    const b = el("button", { type: "button", class: "grade", role: "radio", "aria-checked": String(g === grade), "data-grade": String(g) }, String(g)) as HTMLButtonElement;
     b.addEventListener("click", () => {
       grade = g;
       grades.querySelectorAll("button").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
       save.disabled = false;
+      save.textContent = g === s.score?.suggested_grade ? "Подтвердить оценку" : "Сохранить оценку";
     });
     grades.append(b);
   }
@@ -131,11 +139,23 @@ function reviewItem(s: QueueItem, d: TeacherDeps, rerender: () => void): HTMLEle
     error,
     save,
   );
+  const head = el("p", {}, el("b", {}, s.student_name), ` · ${s.homework_title}`);
+  if (s.score) {
+    const percent = s.score.total ? Math.round((s.score.right / s.score.total) * 100) : 100;
+    return el(
+      "div",
+      { class: "review-item unit-result", "data-review": s.submission_id, "data-score": `${s.score.right}/${s.score.total}` },
+      head,
+      el("p", { class: "muted" }, `Moonbridge: ${scoreText(s.score)} (${percent}%), пройдено ${when(new Date(s.submitted_at), new Date())}`),
+      el("p", { class: "muted" }, `По результату предлагается ${s.score.suggested_grade}: от 90% — 5, от 75% — 4, от 50% — 3.`),
+      form,
+    );
+  }
   return el(
     "div",
     { class: "review-item", "data-review": s.submission_id },
-    el("p", {}, el("b", {}, s.student_name), ` · ${s.homework_title}`),
-    el("p", { class: "muted" }, `${s.file_name}, ${fileSize(s.size)}, сдано ${when(new Date(s.submitted_at), new Date())}`),
+    head,
+    el("p", { class: "muted" }, `${s.file_name}, ${fileSize(s.size ?? 0)}, сдано ${when(new Date(s.submitted_at), new Date())}`),
     open,
     preview,
     form,
@@ -221,16 +241,35 @@ function groupCard(g: GroupView, dash: Dashboard, progress: GroupProgress | unde
 
 function homeworkItem(h: HomeworkView, members: number, now: Date, d: TeacherDeps): HTMLElement {
   const subs = h.submissions ?? [];
+  const of = h.account_id ? 1 : members;
+  const late = (at: string) => (h.due_at && new Date(at) > new Date(h.due_at) ? ", после срока" : "");
   return el(
     "div",
-    { class: "hw-item", "data-homework": h.homework_id },
+    { class: "hw-item", "data-homework": h.homework_id, ...(h.module_id ? { "data-unit": h.module_id } : {}) },
     el("p", { class: "hw-title" }, h.title),
-    el("p", { class: "muted" }, [h.due_at ? `до ${when(new Date(h.due_at), now)}` : "без срока", h.needs_file ? `сдали ${subs.length} из ${members}` : "без файла"].join(" · ")),
+    el(
+      "p",
+      { class: "muted" },
+      [
+        h.assignee_name ? `только ${h.assignee_name}` : undefined,
+        h.due_at ? `до ${when(new Date(h.due_at), now)}` : "без срока",
+        h.module_id ? `юнит Moonbridge · прошли ${subs.length} из ${of}${h.auto_grade ? " · оценка автоматически" : ""}` : h.needs_file ? `сдали ${subs.length} из ${of}` : "без файла",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ),
     ...subs.map((s) => {
+      if (s.score) {
+        return el(
+          "p",
+          { class: "muted", "data-submission": s.submission_id },
+          `${s.student_name}: ${scoreText(s.score)}${late(s.submitted_at)}${s.review ? `, оценка ${s.review.grade}` : ", ждёт оценки"}`,
+        );
+      }
       const open = el(
         "button",
         { type: "button", class: "link", "data-submission": s.submission_id },
-        `${s.student_name}: ${s.file_name} (${fileSize(s.size)})${s.review ? `, оценка ${s.review.grade}` : ", ждёт проверки"}`,
+        `${s.student_name}: ${s.file_name} (${fileSize(s.size ?? 0)})${late(s.submitted_at)}${s.review ? `, оценка ${s.review.grade}` : ", ждёт проверки"}`,
       ) as HTMLButtonElement;
       open.addEventListener("click", async () => {
         if (!d.token) return;
@@ -251,6 +290,7 @@ function newHomeworkForm(g: GroupView, d: TeacherDeps, rerender: () => void): HT
   const description = el("textarea", { class: "answer", name: "description", rows: "3", maxlength: "4000", "aria-label": "Что сделать" }) as HTMLTextAreaElement;
   const due = el("input", { class: "answer", type: "datetime-local", name: "due", "aria-label": "Срок" }) as HTMLInputElement;
   const needsFile = el("input", { type: "checkbox", name: "needs_file", checked: "" }) as HTMLInputElement;
+  const who = assigneeSelect(g);
   const error = el("p", { class: "form-error", role: "alert" });
   const form = el(
     "form",
@@ -266,6 +306,7 @@ function newHomeworkForm(g: GroupView, d: TeacherDeps, rerender: () => void): HT
             description: description.value.trim(),
             due_at: due.value ? moscowInputToIso(due.value) : null,
             needs_file: needsFile.checked,
+            account_id: who.value || null,
           });
           rerender();
         } catch (err) {
@@ -275,12 +316,24 @@ function newHomeworkForm(g: GroupView, d: TeacherDeps, rerender: () => void): HT
     },
     el("label", {}, "Название", title),
     el("label", {}, "Что сделать", description),
+    el("label", {}, "Кому", who),
     el("label", {}, "Срок (по Москве)", due),
     el("label", { class: "check" }, needsFile, "Сдаётся файлом: запись, фото или документ"),
     error,
     el("button", { class: "primary", type: "submit" }, "Задать"),
+    el("p", { class: "muted" }, "Юнит Moonbridge задаётся из ", el("a", { href: "/teacher/catalog", "data-link": "" }, "каталога уроков"), "."),
   );
   return el("details", { class: "new-homework" }, el("summary", {}, "Новая домашка"), form);
+}
+
+/** "Вся группа" or one of its students; the value is the student's account id, empty for the group. */
+export function assigneeSelect(g: GroupView): HTMLSelectElement {
+  return el(
+    "select",
+    { class: "answer", name: "account_id", "aria-label": "Кому" },
+    el("option", { value: "" }, "Вся группа"),
+    ...(g.members ?? []).map((m) => el("option", { value: m.id }, m.name)),
+  ) as HTMLSelectElement;
 }
 
 function newGroupForm(d: TeacherDeps, rerender: () => void, open: boolean): HTMLElement {

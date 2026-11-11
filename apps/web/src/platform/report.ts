@@ -1,6 +1,6 @@
 import { ApiError, type Api, type PracticeView, type StudentReport } from "../net/api.js";
 import { el } from "../ui/dom.js";
-import { when } from "./school.js";
+import { scoreText, when } from "./school.js";
 
 // The weekly report on a student: practice days, first-try accuracy, frequent errors and the
 // week's homework. The teacher reads it before the lesson; the student sees their own week.
@@ -67,7 +67,9 @@ export function reportBody(r: StudentReport, now: Date): HTMLElement[] {
   if (!r.homework.length) parts.push(el("p", { class: "muted" }, "На эту неделю ничего не задано."));
   for (const h of r.homework) {
     const s = h.submission;
-    const status = !h.needs_file ? "без файла" : !s ? "не сдано" : s.review ? `оценка ${s.review.grade}` : `сдано ${when(new Date(s.submitted_at), now)}, ждёт проверки`;
+    const status = h.module_id
+      ? !s ? "юнит Moonbridge не пройден" : `${s.score ? scoreText(s.score) : "пройдено"}${s.review ? `, оценка ${s.review.grade}` : ", ждёт оценки"}`
+      : !h.needs_file ? "без файла" : !s ? "не сдано" : s.review ? `оценка ${s.review.grade}` : `сдано ${when(new Date(s.submitted_at), now)}, ждёт проверки`;
     parts.push(el("p", { class: "report-homework", "data-homework": h.homework_id }, el("span", { class: "hw-title" }, h.title), ` · ${status}`));
   }
   return parts;

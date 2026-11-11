@@ -49,6 +49,15 @@ export interface ModuleResultInput extends Common {
   courseId?: string;
 }
 
+/** A Moonbridge episode played to its end, scored by the tasks answered right on the first try. */
+export interface EpisodeCompletedInput extends Common {
+  episodeId: string;
+  moduleId: string;
+  firstTryRight: number;
+  tasks: number;
+  durationMs?: number;
+}
+
 /**
  * Builds xAPI statements for the moonbridge-v1 profile. Pure: no I/O, no clock unless
  * no timestamp is passed. The same builder runs in the browser and on the server.
@@ -111,6 +120,20 @@ export class StatementBuilder {
       id: this.profile.course(i.courseId),
       definition: { type: ACTIVITY_TYPES.course },
     }, {});
+  }
+
+  /** The school counts these towards a unit given as homework (apps/server/src/school/units.ts). */
+  episodeCompleted(i: EpisodeCompletedInput): Statement {
+    const p = this.profile;
+    return this.base(i, "completed", {
+      objectType: "Activity",
+      id: p.episode(i.episodeId),
+      definition: { type: ACTIVITY_TYPES.episode },
+    }, { parent: [{ id: p.module(i.moduleId) }] }, {
+      completion: true,
+      score: { raw: i.firstTryRight, min: 0, max: i.tasks, scaled: i.tasks > 0 ? round4(i.firstTryRight / i.tasks) : 1 },
+      ...(i.durationMs !== undefined ? { duration: isoDuration(i.durationMs) } : {}),
+    });
   }
 
   /** A Moonbridge place opened for the student: they reached the unit that unlocks it. */

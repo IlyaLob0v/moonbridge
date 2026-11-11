@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attemptOf, conceptErrors, isoDuration, parseIsoDuration, XapiProfile, LrsClient, MemoryOutboxStore, Outbox, StatementBuilder, validateStatement, type SendOutcome, type Statement } from "../src/index.js";
+import { attemptOf, conceptErrors, episodeResultOf, isoDuration, parseIsoDuration, XapiProfile, LrsClient, MemoryOutboxStore, Outbox, StatementBuilder, validateStatement, type SendOutcome, type Statement } from "../src/index.js";
 
 const builder = new StatementBuilder(new XapiProfile("https://moonbridge.example.com/"));
 const make = (n: number): Statement[] =>
@@ -213,6 +213,23 @@ describe("attemptOf", () => {
     const right = attemptOf(b.answered({ ...common, response: "am", success: true, attempt: 1 }), profile)!;
     expect(right.errorType).toBeUndefined();
     expect(attemptOf(b.launched({ playerId: "p", courseId: "c" }), profile)).toBeUndefined();
+  });
+
+  it("reads a finished episode back, and refuses a score that makes no sense", () => {
+    const s = b.episodeCompleted({ playerId: "player_1", episodeId: "A1_Unit_01_check_in", moduleId: "A1_Unit_01", firstTryRight: 2, tasks: 3, timestamp: new Date("2026-12-01T10:05:00Z") });
+    expect(validateStatement(s).ok).toBe(true);
+    expect(episodeResultOf(s, profile)).toEqual({
+      statementId: s.id,
+      playerId: "player_1",
+      episodeId: "A1_Unit_01_check_in",
+      moduleId: "A1_Unit_01",
+      right: 2,
+      tasks: 3,
+      finishedAt: new Date("2026-12-01T10:05:00Z"),
+    });
+    const inflated = { ...s, result: { ...s.result, score: { raw: 5, max: 3 } } };
+    expect(episodeResultOf(inflated, profile)).toBeUndefined();
+    expect(episodeResultOf(b.moduleResult({ playerId: "p", moduleId: "A1_Unit_01", verb: "completed", scoreRaw: 1, scoreMax: 1 }), profile)).toBeUndefined();
   });
 
   it("parses the durations the builder writes", () => {

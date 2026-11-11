@@ -30,7 +30,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   clock = new Date("2026-11-30T09:00:00Z");
-  await sql.exec("TRUNCATE accounts, school_groups, group_members, invites, homework, submissions, player_progress, attempts CASCADE");
+  await sql.exec("TRUNCATE accounts, school_groups, group_members, invites, homework, submissions, player_progress, attempts, episode_results CASCADE");
 });
 
 async function school() {
@@ -443,5 +443,116 @@ describe("the pilot", () => {
     expect(metrics.feedback).toMatchObject([{ name: "Анна", role: "student", page: "/moonbridge", message: "Кнопка «Дальше» не нажимается", user_agent: "Mozilla/5.0 (iPhone)" }]);
     expect((await app.inject({ url: "/admin/feedback" })).statusCode).toBe(401);
     expect((await app.inject({ url: "/admin/feedback", headers: auth("admin-secret") })).json().feedback).toHaveLength(1);
+  });
+});
+
+/** A finished Moonbridge episode, sent the way the section sends it. */
+async function finishEpisode(app: FastifyInstance, student: { token: string; player_id: string }, episodeId: string, moduleId: string, right: number, tasks: number, at: Date) {
+  const b = new StatementBuilder(new XapiProfile("https://moonbridge.example.com"));
+  const s = b.episodeCompleted({ playerId: student.player_id, episodeId, moduleId, firstTryRight: right, tasks, timestamp: at });
+  const res = await app.inject({ method: "POST", url: "/xapi/statements", headers: auth(student.token), payload: [s] });
+  expect(res.statusCode).toBe(202);
+  return s;
+}
+
+describe("a Moonbridge unit as homework", () => {
+  it("lists the units in course order with their episodes, for teachers only", async () => {
+    const app = await school();
+    const t = await teacher(app);
+    const { code } = await groupWithInvite(app, t);
+    const anna = (await joinGroup(app, code)).json();
+    expect((await app.inject({ url: "/school/catalog", headers: auth(anna.token) })).statusCode).toBe(403);
+    const units = (await app.inject({ url: "/school/catalog", headers: auth(t) })).json().units;
+    expect(units.map((u: { module_id: string }) => u.module_id)).toEqual(["A1_VerbToBe_01", "A1_PastSimple_01", "A1_Articles_01"]);
+    expect(units[0]).toMatchObject({ cefr_level: "A1", episodes: [{ episode_id: "to_be_at_reception", tasks: 1 }], tasks: 1 });
+    expect(units[1].episodes).toEqual([]);
+  });
+
+  it("gives a unit to the group; the student plays it and the score waits in the review queue with a suggested grade", async () => {
+    const app = await school();
+    const t = await teacher(app);
+    const { groupId, code } = await groupWithInvite(app, t);
+    const anna = (await joinGroup(app, code)).json();
+    const boris = (await joinGroup(app, code, "boris")).json();
+    // Played before the homework was given: does not count.
+    await finishEpisode(app, anna, "to_be_at_reception", "A1_VerbToBe_01", 1, 1, new Date("2026-11-29T10:00:00Z"));
+
+    const created = await app.inject({ method: "POST", url: `/school/groups/${groupId}/homework`, headers: auth(t), payload: { module_id: "A1_VerbToBe_01", account_id: null, due_at: "2026-12-03T15:00:00.000Z" } });
+    expect(created.statusCode).toBe(201);
+    const hw = created.json().homework;
+    expect(hw).toMatchObject({ title: "Moonbridge: Слова у врат", module_id: "A1_VerbToBe_01", account_id: null, needs_file: false, auto_grade: false });
+
+    let mine = (await app.inject({ url: "/school/dashboard", headers: auth(anna.token) })).json().homework[0];
+    expect(mine.unit).toEqual({ title: "Слова у врат", episodes: [{ episode_id: "to_be_at_reception", title: expect.any(String), done: false }] });
+    expect(mine.submission).toBeNull();
+    let progress = (await app.inject({ url: `/school/groups/${groupId}/progress`, headers: auth(t) })).json();
+    expect(progress.students.map((s: { homework_open: number }) => s.homework_open)).toEqual([1, 1]);
+
+    clock = new Date("2026-12-01T10:00:00Z");
+    // A wrong first try, then a better replay: the best play counts. A resend changes nothing.
+    await finishEpisode(app, anna, "to_be_at_reception", "A1_VerbToBe_01", 0, 1, new Date("2026-12-01T10:00:00Z"));
+    const queue1 = (await app.inject({ url: "/school/review-queue", headers: auth(t) })).json().submissions;
+    expect(queue1).toMatchObject([{ student_name: "Анна", homework_title: "Moonbridge: Слова у врат", file_name: null, score: { right: 0, total: 1, suggested_grade: 2 } }]);
+    const replay = await finishEpisode(app, anna, "to_be_at_reception", "A1_VerbToBe_01", 1, 1, new Date("2026-12-01T10:10:00Z"));
+    await app.inject({ method: "POST", url: "/xapi/statements", headers: auth(anna.token), payload: [replay] });
+    const queue = (await app.inject({ url: "/school/review-queue", headers: auth(t) })).json().submissions;
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ score: { right: 1, total: 1, suggested_grade: 5 }, submitted_at: "2026-12-01T10:10:00.000Z" });
+    // No file to open.
+    expect((await app.inject({ method: "POST", url: `/school/submissions/${queue[0].submission_id}/link`, headers: auth(t) })).statusCode).toBe(404);
+
+    mine = (await app.inject({ url: "/school/dashboard", headers: auth(anna.token) })).json().homework[0];
+    expect(mine.unit.episodes[0].done).toBe(true);
+    expect(mine.submission).toMatchObject({ score: { right: 1, total: 1 }, review: null });
+    progress = (await app.inject({ url: `/school/groups/${groupId}/progress`, headers: auth(t) })).json();
+    expect(progress.students.map((s: { id: string; homework_open: number }) => [s.id, s.homework_open])).toEqual([[anna.account.id, 0], [boris.account.id, 1]]);
+
+    await app.inject({ method: "POST", url: `/school/submissions/${queue[0].submission_id}/review`, headers: auth(t), payload: { grade: 5, comment: "Отлично!" } });
+    // A graded result stays as it was, whatever is played later.
+    await finishEpisode(app, anna, "to_be_at_reception", "A1_VerbToBe_01", 0, 1, new Date("2026-12-01T11:00:00Z"));
+    mine = (await app.inject({ url: "/school/dashboard", headers: auth(anna.token) })).json().homework[0];
+    expect(mine.submission).toMatchObject({ score: { right: 1, total: 1 }, review: { grade: 5, comment: "Отлично!" } });
+    const report = (await app.inject({ url: `/school/students/${anna.account.id}/report`, headers: auth(t) })).json();
+    expect(report.homework[0]).toMatchObject({ module_id: "A1_VerbToBe_01", submission: { review: { grade: 5 } } });
+  });
+
+  it("gives a unit to one student only, and grades it at once when asked", async () => {
+    const app = await school();
+    const t = await teacher(app);
+    const { groupId, code } = await groupWithInvite(app, t);
+    const anna = (await joinGroup(app, code)).json();
+    const boris = (await joinGroup(app, code, "boris")).json();
+    const res = await app.inject({
+      method: "POST",
+      url: `/school/groups/${groupId}/homework`,
+      headers: auth(t),
+      payload: { module_id: "A1_Articles_01", account_id: boris.account.id, auto_grade: true, title: "Повтори артикли" },
+    });
+    expect(res.json().homework).toMatchObject({ title: "Повтори артикли", account_id: boris.account.id, auto_grade: true });
+    expect((await app.inject({ url: "/school/dashboard", headers: auth(anna.token) })).json().homework).toEqual([]);
+    expect((await app.inject({ url: "/school/dashboard", headers: auth(boris.token) })).json().homework).toHaveLength(1);
+    expect((await app.inject({ url: "/school/dashboard", headers: auth(t) })).json().homework).toHaveLength(1);
+
+    await finishEpisode(app, boris, "articles_in_cafe", "A1_Articles_01", 0, 1, new Date(clock.getTime() + 60_000));
+    expect((await app.inject({ url: "/school/review-queue", headers: auth(t) })).json().submissions).toEqual([]);
+    const mine = (await app.inject({ url: "/school/dashboard", headers: auth(boris.token) })).json().homework[0];
+    expect(mine.submission.review).toMatchObject({ grade: 2, comment: expect.stringContaining("автоматически") });
+    // Anna plays the same unit: it is not her homework, nothing is handed in for her.
+    await finishEpisode(app, anna, "articles_in_cafe", "A1_Articles_01", 1, 1, new Date(clock.getTime() + 60_000));
+    const teacherView = (await app.inject({ url: "/school/dashboard", headers: auth(t) })).json().homework[0];
+    expect(teacherView.submissions.map((s: { account_id: string }) => s.account_id)).toEqual([boris.account.id]);
+  });
+
+  it("refuses a unit that does not exist or has no episodes, a file for a unit, and a stranger as the student", async () => {
+    const app = await school();
+    const t = await teacher(app);
+    const { groupId } = await groupWithInvite(app, t);
+    const post = (payload: object) => app.inject({ method: "POST", url: `/school/groups/${groupId}/homework`, headers: auth(t), payload });
+    expect((await post({ module_id: "A1_Nope_99" })).statusCode).toBe(404);
+    expect((await post({ module_id: "A1_PastSimple_01" })).statusCode).toBe(409);
+    expect((await post({ module_id: "A1_VerbToBe_01", needs_file: true })).statusCode).toBe(400);
+    expect((await post({ module_id: "A1_VerbToBe_01", account_id: "acc_stranger" })).statusCode).toBe(404);
+    expect((await post({ title: "Без файла?" })).statusCode).toBe(400);
+    expect((await post({ needs_file: false })).statusCode).toBe(400);
   });
 });

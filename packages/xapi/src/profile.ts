@@ -17,6 +17,8 @@ export const ACTIVITY_TYPES = {
   interaction: "http://adlnet.gov/expapi/activities/cmi.interaction",
   module: "http://adlnet.gov/expapi/activities/module",
   course: "http://adlnet.gov/expapi/activities/course",
+  /** A Moonbridge episode: a scene the student plays through, with tasks inside. */
+  episode: "http://adlnet.gov/expapi/activities/simulation",
 } as const;
 
 export type VerbKey = keyof typeof ADL_VERBS | "unlocked";
@@ -70,6 +72,11 @@ export class XapiProfile {
   /** A Moonbridge place (reception, Night Café…). */
   place(placeId: string): string {
     return `${this.baseIri}/xapi/moonbridge/places/${encodeURIComponent(placeId)}`;
+  }
+
+  /** A Moonbridge episode (one scene of a unit). */
+  episode(episodeId: string): string {
+    return `${this.baseIri}/xapi/moonbridge/episodes/${encodeURIComponent(episodeId)}`;
   }
 
   /** "grammar.overgeneralization" → …/xapi/errors/grammar/overgeneralization */

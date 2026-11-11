@@ -53,19 +53,29 @@ describe("the schedule", () => {
 });
 
 describe("homework", () => {
-  it("lists only file homework the student has not handed in", () => {
-    const hw = (id: string, needs_file: boolean, submitted: boolean) => ({
+  it("lists the file homework not handed in and the units not played through", () => {
+    const hw = (id: string, needs_file: boolean, submitted: boolean, unit = false) => ({
       homework_id: id,
       group_id: "g",
       title: id,
       description: "",
       due_at: null,
       needs_file,
+      module_id: unit ? "A1_Unit_01" : null,
+      account_id: null,
+      assignee_name: null,
+      auto_grade: false,
       created_at: "2026-11-30T09:00:00Z",
-      submission: submitted ? { submission_id: "s", account_id: "a", student_name: "Анна", file_name: "x.m4a", mime: "audio/mp4", size: 1, submitted_at: "2026-11-30T10:00:00Z", review: null } : null,
+      submission: submitted
+        ? { submission_id: "s", account_id: "a", student_name: "Анна", file_name: "x.m4a", mime: "audio/mp4", size: 1, score: null, submitted_at: "2026-11-30T10:00:00Z", review: null }
+        : null,
     });
-    const d: Dashboard = { account: { id: "a", name: "Анна", role: "student", login: "anna" }, groups: [], homework: [hw("open", true, false), hw("done", true, true), hw("in-class", false, false)] };
-    expect(openHomework(d).map((h) => h.homework_id)).toEqual(["open"]);
+    const d: Dashboard = {
+      account: { id: "a", name: "Анна", role: "student", login: "anna" },
+      groups: [],
+      homework: [hw("open", true, false), hw("done", true, true), hw("in-class", false, false), hw("unit", false, false, true), hw("unit-played", false, true, true)],
+    };
+    expect(openHomework(d).map((h) => h.homework_id)).toEqual(["open", "unit"]);
   });
 });
 

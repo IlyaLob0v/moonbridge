@@ -225,7 +225,7 @@ async function main(): Promise<void> {
 
     step("The teacher updates the course from the sheet");
     await teacher.goto(`${WEB}/teacher`);
-    await teacher.locator(".content-link a").click();
+    await teacher.locator(".content-link a[href=\"/teacher/content\"]").click();
     await teacher.locator("[data-content-hash]").waitFor();
     const before = await teacher.locator("[data-content-hash]").getAttribute("data-content-hash");
     check(/4 юнита, 45 заданий, 4 эпизода/.test(await teacher.locator("[data-content-hash]").innerText()), "the content page counts units 1–4");

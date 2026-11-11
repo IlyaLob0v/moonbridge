@@ -10,6 +10,7 @@ import { FileTooLargeError, type FileStore } from "./files.js";
 import { FailureLimiter } from "./limits.js";
 import { pilotMetrics } from "./metrics.js";
 import { DUMMY_HASH, hashPassword, verifyPassword } from "./passwords.js";
+import { catalog, suggestedGrade, unitEpisodes, unitProgress } from "./units.js";
 import { LoginTakenError, type Account, type Feedback, type Group, type Homework, type PracticeSummary, type SchoolStore, type Submission } from "./store.js";
 
 export interface SchoolDeps {
@@ -123,6 +124,8 @@ const submissionView = (s: Submission) => ({
   file_name: s.fileName,
   mime: s.mime,
   size: s.size,
+  // A unit's result: right on the first try out of all tasks, and the grade that suggests.
+  score: s.score ? { right: s.score.right, total: s.score.total, suggested_grade: suggestedGrade(s.score.right, s.score.total) } : null,
   submitted_at: s.submittedAt.toISOString(),
   review: s.review ? { grade: s.review.grade, comment: s.review.comment, reviewed_at: s.review.reviewedAt.toISOString() } : null,
 });
@@ -133,8 +136,15 @@ const homeworkView = (h: Homework) => ({
   description: h.description,
   due_at: h.dueAt?.toISOString() ?? null,
   needs_file: h.needsFile,
+  module_id: h.moduleId,
+  account_id: h.accountId,
+  assignee_name: h.assigneeName,
+  auto_grade: h.autoGrade,
   created_at: h.createdAt.toISOString(),
 });
+/** Homework a student still owes: a file not handed in, or a unit not played through. */
+const owes = (h: Homework, handedIn: Submission[], accountId: string) =>
+  (h.needsFile || h.moduleId !== null) && (h.accountId === null || h.accountId === accountId) && !handedIn.some((s) => s.homeworkId === h.homeworkId && s.accountId === accountId);
 const MSK_MS = 3 * 3600_000;
 const DAY_MS = 24 * 3600_000;
 
@@ -279,7 +289,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
   app.get("/school/dashboard", { preHandler: requireAccount }, async (req) => {
     const a = req.account!;
     const groups = await d.school.groupsOf(a);
-    const homework = await d.school.homeworkOf(groups.map((g) => g.groupId));
+    const homework = await d.school.homeworkOf(groups.map((g) => g.groupId), a.role === "student" ? a.accountId : undefined);
     const ids = homework.map((h) => h.homeworkId);
     if (a.role === "teacher") {
       const submissions = await d.school.submissionsFor(ids);
@@ -290,13 +300,24 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
       };
     }
     const mine = await d.school.submissionsFor(ids, a.accountId);
+    const bundle = d.content?.live.bundle;
     return {
       account: accountView(a),
       groups: groups.map(groupView),
-      homework: homework.map((h) => {
-        const s = mine.find((x) => x.homeworkId === h.homeworkId);
-        return { ...homeworkView(h), submission: s ? submissionView(s) : null };
-      }),
+      homework: await Promise.all(
+        homework.map(async (h) => {
+          const s = mine.find((x) => x.homeworkId === h.homeworkId);
+          // A unit: its episodes, and which of them the student has played since it was given.
+          const unit =
+            h.moduleId && bundle
+              ? {
+                  title: bundle.modules.find((m) => m.module_id === h.moduleId)?.title.ru ?? h.moduleId,
+                  episodes: (await unitProgress(d.school, bundle, a.playerId, h)).map((p) => ({ episode_id: p.episode.episode_id, title: p.episode.title.ru, done: !!p.result })),
+                }
+              : undefined;
+          return { ...homeworkView(h), submission: s ? submissionView(s) : null, ...(unit ? { unit } : {}) };
+        }),
+      ),
     };
   });
 
@@ -333,14 +354,14 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     if (!g) return;
     const from = weekStart(now());
     const to = new Date(from.getTime() + 7 * DAY_MS);
-    const homework = (await d.school.homeworkOf([g.groupId])).filter((h) => h.needsFile);
+    const homework = await d.school.homeworkOf([g.groupId]);
     const handedIn = await d.school.submissionsFor(homework.map((h) => h.homeworkId));
     const students = await Promise.all(
       (await d.school.members(g.groupId)).map(async (m) => ({
         id: m.accountId,
         name: m.name,
         week: practiceView(await d.school.practice(m.playerId, from, to)),
-        homework_open: homework.filter((h) => !handedIn.some((s) => s.homeworkId === h.homeworkId && s.accountId === m.accountId)).length,
+        homework_open: homework.filter((h) => owes(h, handedIn, m.accountId)).length,
       })),
     );
     return { week: { from: moscowDate(from), to: moscowDate(new Date(to.getTime() - DAY_MS)) }, students };
@@ -359,7 +380,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     const to = new Date(from.getTime() + 7 * DAY_MS);
     const before = new Date(from.getTime() - 7 * DAY_MS);
     const groups = await d.school.groupsOf(student);
-    const homework = (await d.school.homeworkOf(groups.map((g) => g.groupId))).filter((h) => {
+    const homework = (await d.school.homeworkOf(groups.map((g) => g.groupId), student.accountId)).filter((h) => {
       const at = h.dueAt ?? h.createdAt;
       return at >= from && at < to;
     });
@@ -512,32 +533,67 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     return reply.code(201).send({ code: invite.code, url, expires_at: invite.expiresAt.toISOString() });
   });
 
-  app.post<{ Params: { id: string }; Body: { title: string; description?: string; due_at?: string | null; needs_file: boolean } }>(
+  /** The lesson catalog: every unit of the live content in course order, with the episodes the student would play. */
+  app.get("/school/catalog", { preHandler: requireTeacher }, async () => {
+    const bundle = d.content?.live.bundle;
+    return { units: bundle ? catalog(bundle) : [] };
+  });
+
+  /**
+   * New homework for the group, or for one student of it (account_id). With module_id it is a
+   * Moonbridge unit from the catalog: the student plays its episodes and the result comes in by
+   * itself; with auto_grade it is graded from the score at once.
+   */
+  app.post<{
+    Params: { id: string };
+    Body: { title?: string; description?: string; due_at?: string | null; needs_file?: boolean; module_id?: string | null; account_id?: string | null; auto_grade?: boolean };
+  }>(
     "/school/groups/:id/homework",
     {
       preHandler: requireTeacher,
       schema: {
         body: {
           type: "object",
-          required: ["title", "needs_file"],
           additionalProperties: false,
           properties: {
-            title: { type: "string", minLength: 1, maxLength: 120 },
+            title: { type: "string", maxLength: 120 },
             description: { type: "string", maxLength: 4000 },
             due_at: { anyOf: [{ type: "string", format: "date-time" }, { type: "null" }] },
             needs_file: { type: "boolean" },
+            module_id: { anyOf: [{ type: "string", maxLength: 120 }, { type: "null" }] },
+            account_id: { anyOf: [{ type: "string", maxLength: 64 }, { type: "null" }] },
+            auto_grade: { type: "boolean" },
           },
         },
       },
     },
     async (req, reply) => {
       if (!(await ownGroup(req, reply))) return;
+      const b = req.body;
+      // The body schema turns a null into "" for these: both mean "none".
+      const moduleId = b.module_id || null;
+      const accountId = b.account_id || null;
+      const module = moduleId ? d.content?.live.bundle.modules.find((m) => m.module_id === moduleId) : undefined;
+      if (moduleId) {
+        if (!module) return reply.code(404).send({ error: "unit", message: "Такого юнита нет в контенте курса" });
+        if (!unitEpisodes(d.content!.live.bundle, moduleId).length) return reply.code(409).send({ error: "no_episodes", message: "В этом юните пока нет эпизодов Moonbridge" });
+        if (b.needs_file) return reply.code(400).send({ error: "needs_file", message: "Юнит Moonbridge сдаётся игрой, а не файлом" });
+      } else if (b.needs_file === undefined) {
+        return reply.code(400).send({ error: "needs_file", message: "Укажите, сдаётся ли домашка файлом" });
+      }
+      const title = (b.title ?? "").trim() || (module ? `Moonbridge: ${module.title.ru}` : "");
+      if (!title) return reply.code(400).send({ error: "title", message: "Нужно название" });
+      if (accountId && !(await d.school.isMember(req.params.id, accountId))) return reply.code(404).send({ error: "student", message: "Этого ученика нет в группе" });
       const h = await d.school.createHomework({
         groupId: req.params.id,
-        title: req.body.title.trim(),
-        description: (req.body.description ?? "").trim(),
-        dueAt: req.body.due_at ? new Date(req.body.due_at) : null,
-        needsFile: req.body.needs_file,
+        title,
+        description: (b.description ?? "").trim(),
+        dueAt: b.due_at ? new Date(b.due_at) : null,
+        needsFile: !moduleId && b.needs_file === true,
+        moduleId,
+        accountId,
+        autoGrade: !!moduleId && b.auto_grade === true,
+        createdAt: now(),
       });
       return reply.code(201).send({ homework: homeworkView(h) });
     },
@@ -554,7 +610,8 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
       const body = req.body as Readable | undefined;
       const drain = () => body?.resume();
       const h = await d.school.homework(req.params.id);
-      if (!h || !(await d.school.isMember(h.groupId, req.account!.accountId))) return (drain(), reply.code(404).send({ error: "no such homework" }));
+      const me = req.account!.accountId;
+      if (!h || (h.accountId !== null && h.accountId !== me) || !(await d.school.isMember(h.groupId, me))) return (drain(), reply.code(404).send({ error: "no such homework" }));
       if (!h.needsFile) return (drain(), reply.code(409).send({ error: "no_file", message: "Эта домашка сдаётся без файла" }));
       const fileName = basename(String(req.query.name ?? "file")).replace(/[\u0000-\u001f\u007f/\\]/g, "").slice(-120) || "file";
       const mime = acceptedType(req.headers["content-type"], fileName);
@@ -587,7 +644,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
    * keeps its name and opens on phones too, where saving a blob from script is unreliable.
    */
   app.post<{ Params: { id: string } }>("/school/submissions/:id/link", { preHandler: requireAccount }, async (req, reply) => {
-    if (!(await visibleSubmission(req.params.id, req.account!))) return reply.code(404).send({ error: "not found" });
+    if (!(await visibleSubmission(req.params.id, req.account!))?.fileKey) return reply.code(404).send({ error: "not found" });
     const t = await new SignJWT({}).setProtectedHeader({ alg: "HS256" }).setSubject(req.params.id).setIssuedAt().setExpirationTime(`${FILE_LINK_SECONDS}s`).sign(linkKey);
     return { url: `/school/submissions/${req.params.id}/file?t=${t}` };
   });
@@ -603,13 +660,13 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
       if (reply.sent) return;
       s = await visibleSubmission(req.params.id, req.account!);
     }
-    if (!s) return reply.code(404).send({ error: "not found" });
+    if (!s?.fileKey) return reply.code(404).send({ error: "not found" });
     const file = await d.files.open(s.fileKey);
     if (!file) return reply.code(404).send({ error: "file missing" });
     return reply
-      .type(s.mime)
+      .type(s.mime ?? "application/octet-stream")
       .header("Content-Length", file.size)
-      .header("Content-Disposition", `attachment; filename="${s.fileName.replace(/[^\x20-\x7e]|["\\]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(s.fileName)}`)
+      .header("Content-Disposition", `attachment; filename="${(s.fileName ?? "file").replace(/[^\x20-\x7e]|["\\]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(s.fileName ?? "file")}`)
       .header("Cache-Control", "private, no-store")
       .send(file.stream);
   });

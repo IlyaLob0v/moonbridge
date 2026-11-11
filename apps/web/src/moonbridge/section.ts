@@ -48,21 +48,31 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
   }
 
   if (episodeId) {
-    const playable = view.places.filter((p) => p.open).flatMap((p) => p.episodes).find((e) => e.episode.episode_id === episodeId && e.available);
+    // An episode the course has reached, or one of a unit the teacher gave as homework, even
+    // if the student has not got that far in the hotel yet.
+    const homework = d.board?.homework.filter((h) => h.module_id && content.episodes.some((e) => e.episode_id === episodeId && e.module_id === h.module_id)) ?? [];
+    const reached = view.places.filter((p) => p.open).flatMap((p) => p.episodes).find((e) => e.episode.episode_id === episodeId && e.available)?.episode;
+    const playable = reached ?? (homework.length ? content.episodes.find((e) => e.episode_id === episodeId) : undefined);
     if (!playable) return d.navigate("/moonbridge");
-    const result = await playEpisode(root, playable.episode, { content, learner: d.learner, mediaBase: d.mediaBase });
+    const result = await playEpisode(root, playable, { content, learner: d.learner, mediaBase: d.mediaBase });
+    // The result goes to the school before the student opens the homework again.
+    if (homework.length) await d.learner.sync();
     const next: MoonbridgeState = markPractice(completeEpisode(state, result.episodeId), d.learner.day());
     await d.kv.set(KEY, next);
     const before = new Set(view.places.filter((p) => p.open).map((p) => p.place.place_id));
     const opened = hotelView(content, course, next).places.filter((p) => p.open && !before.has(p.place.place_id));
+    const assigned = homework.find((h) => !h.submission?.review) ?? homework[0];
     root.replaceChildren(
       el(
         "div",
         { class: "card episode-end", "data-episode-end": result.episodeId },
-        el("h1", {}, playable.episode.title.ru),
+        el("h1", {}, playable.title.ru),
         el("p", {}, `Эпизод пройден. С первого раза: ${result.firstTry.right} из ${result.firstTry.total}.`),
         ...opened.map((p) => el("p", { class: "unlocked" }, `Открылось новое место: ${p.place.name.ru}`)),
-        el("button", { class: "primary", onclick: () => d.navigate("/moonbridge") }, "В отель"),
+        ...(assigned
+          ? [el("button", { class: "primary", "data-to-homework": assigned.homework_id, onclick: () => d.navigate(`/homework/${assigned.homework_id}`) }, "К домашке")]
+          : []),
+        el("button", { class: assigned ? "" : "primary", onclick: () => d.navigate("/moonbridge") }, "В отель"),
       ),
     );
     return;

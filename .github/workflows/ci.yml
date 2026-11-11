@@ -32,6 +32,8 @@ jobs:
         run: pnpm --filter @moonbridge/e2e moonbridge
       - name: End-to-end, the school (teacher, invitation, homework file, second phone)
         run: pnpm --filter @moonbridge/e2e school
+      - name: End-to-end, a Moonbridge unit as homework (catalog, play, review queue)
+        run: pnpm --filter @moonbridge/e2e units
       - name: End-to-end, the pilot rehearsal (three students, five days, the metrics page)
         run: pnpm --filter @moonbridge/e2e pilot
       - uses: actions/upload-artifact@v4

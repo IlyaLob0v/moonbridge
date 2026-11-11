@@ -14,7 +14,7 @@ let sql: Sql;
 beforeAll(async () => {
   pglite = new PGlite();
   sql = { query: (text, params) => pglite.query(text, params), exec: (text) => pglite.exec(text) } as Sql;
-  expect(await migrate(sql)).toEqual(["001_init.sql", "002_school.sql", "003_review.sql", "004_content.sql", "005_pilot.sql"]);
+  expect(await migrate(sql)).toEqual(["001_init.sql", "002_school.sql", "003_review.sql", "004_content.sql", "005_pilot.sql", "006_unit_homework.sql"]);
 });
 
 afterAll(async () => {
