@@ -175,7 +175,7 @@ details.new-homework summary { cursor: pointer; color: var(--accent); padding: 8
 .sheet-report ul { margin: 4px 0; padding-left: 20px; overflow-wrap: anywhere; }
 .sheet-report li { margin: 4px 0; }
 .sheet-ok { color: var(--good); }
-.content-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.content-link, .finance-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
 /* Pilot metrics */
 .metrics-link { display: inline-block; margin: 10px 0 4px; font-weight: 600; }

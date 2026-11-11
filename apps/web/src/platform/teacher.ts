@@ -53,7 +53,7 @@ export async function renderTeacher(root: HTMLElement, d: TeacherDeps): Promise<
       newGroupForm(d, rerender, groups.length === 0),
       el(
         "section",
-        { class: "card content-link" },
+        { class: "card finance-link" },
         el("div", {}, el("h2", {}, "Оплаты"), el("p", { class: "muted" }, "Баланс уроков учеников и журнал оплат.")),
         el("a", { class: "button", href: "/teacher/finance", "data-link": "", "data-finance": "" }, "Открыть"),
       ),
