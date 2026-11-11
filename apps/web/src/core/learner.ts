@@ -37,12 +37,14 @@ export class Learner {
   readonly scheduler: ConceptScheduler;
   readonly repeats: RepeatSchedule;
   private readonly engine: LearningEngine;
+  private readonly builder: StatementBuilder;
   private readonly attemptNo = new Map<string, number>();
 
   private constructor(private readonly d: LearnerDeps, cards: StoredConceptCard[], repeats: RepeatItem[]) {
     this.scheduler = new ConceptScheduler({}, cards);
     this.repeats = new RepeatSchedule({}, repeats);
     this.outbox = new Outbox(d.outboxStore, d.sink);
+    this.builder = new StatementBuilder(new XapiProfile(d.xapiBaseIri));
     this.engine = new LearningEngine({
       bundle: d.bundle,
       playerId: d.playerId,
@@ -51,7 +53,7 @@ export class Learner {
       repeats: this.repeats,
       journal: d.journal,
       queue: this.outbox,
-      builder: new StatementBuilder(new XapiProfile(d.xapiBaseIri)),
+      builder: this.builder,
       ...(d.now ? { now: d.now } : {}),
     });
   }
@@ -100,6 +102,27 @@ export class Learner {
   /** A new scene or session: attempt numbers start again from 1. */
   resetAttempts(): void {
     this.attemptNo.clear();
+  }
+
+  /**
+   * A Moonbridge episode played to its end. The statement goes through the same offline queue
+   * as the answers; the school counts it towards a unit given as homework.
+   */
+  async episodeCompleted(e: { episodeId: string; moduleId: string; firstTryRight: number; tasks: number; durationMs: number }): Promise<void> {
+    const module = this.d.bundle.modules.find((m) => m.module_id === e.moduleId);
+    await this.outbox.enqueue([
+      this.builder.episodeCompleted({
+        playerId: this.d.playerId,
+        registration: this.d.registration,
+        timestamp: this.now(),
+        ...(module ? { contentVersion: `${module.module_id}@${module.version}`, cefrLevel: module.cefr_level } : {}),
+        episodeId: e.episodeId,
+        moduleId: e.moduleId,
+        firstTryRight: e.firstTryRight,
+        tasks: e.tasks,
+        durationMs: e.durationMs,
+      }),
+    ]);
   }
 
   /** Sends what the outbox holds; never throws, the outbox retries on its own schedule. */

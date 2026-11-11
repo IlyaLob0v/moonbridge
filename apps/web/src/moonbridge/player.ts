@@ -16,6 +16,7 @@ export interface EpisodeResult {
   /** Task answers: how many of the tasks shown were right on the first try. */
   firstTry: { right: number; total: number };
   path: string[];
+  durationMs: number;
 }
 
 /** Someone who can speak in a scene: a resident, or a guest of the day. */
@@ -84,6 +85,7 @@ export async function playEpisode(root: HTMLElement, episode: Episode, d: Player
   const place = d.content.places.find((p) => p.place_id === episode.place_id)!;
   const characters = new Map(d.content.characters.map((c) => [c.character_id, residentSpeaker(c)]));
   const runner = new EpisodeRunner(episode);
+  const started = d.learner.now().getTime();
   const firstTry = new Map<string, boolean>();
   d.learner.resetAttempts();
   const stage = new Stage(root, place, episode.title.ru, { "data-episode": episode.episode_id }, d);
@@ -102,12 +104,15 @@ export async function playEpisode(root: HTMLElement, episode: Episode, d: Player
       runner.answer(result.outcome.correct);
     }
   }
-  void d.learner.sync();
-  return {
+  const result = {
     episodeId: episode.episode_id,
     firstTry: { right: [...firstTry.values()].filter(Boolean).length, total: firstTry.size },
     path: runner.path,
+    durationMs: Math.max(0, d.learner.now().getTime() - started),
   };
+  await d.learner.episodeCompleted({ episodeId: episode.episode_id, moduleId: episode.module_id, firstTryRight: result.firstTry.right, tasks: result.firstTry.total, durationMs: result.durationMs });
+  void d.learner.sync();
+  return result;
 }
 
 function line(box: HTMLElement, en: string, ru: string | undefined): Promise<void> {

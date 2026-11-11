@@ -90,14 +90,32 @@ export function fileSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1).replace(".", ",")} МБ`;
 }
 
-/** Homework still waiting for the student, the nearest deadline first. */
+/** Homework still waiting for the student, the nearest deadline first: a file to hand in or a unit to play. */
 export function openHomework(d: Dashboard): HomeworkView[] {
-  return d.homework.filter((h) => h.needs_file && !h.submission);
+  return d.homework.filter((h) => (h.needs_file || h.module_id) && !h.submission);
+}
+
+/** "8 из 10 с первого раза" */
+export function scoreText(score: { right: number; total: number }): string {
+  return `${score.right} из ${score.total} с первого раза`;
+}
+
+/** The first episode of a unit homework the student has not played yet, or the first one to replay. */
+export function nextUnitEpisode(h: HomeworkView): string | undefined {
+  const episodes = h.unit?.episodes ?? [];
+  return (episodes.find((e) => !e.done) ?? episodes[0])?.episode_id;
 }
 
 function homeworkStatus(h: HomeworkView, now: Date): string {
   if (h.submission?.review) return `Оценка ${h.submission.review.grade}`;
+  if (h.submission?.score) return `Пройдено: ${scoreText(h.submission.score)}, ждёт оценки`;
   if (h.submission) return `Сдано: ${h.submission.file_name}`;
+  if (h.module_id) {
+    const episodes = h.unit?.episodes ?? [];
+    const done = episodes.filter((e) => e.done).length;
+    const late = h.due_at && new Date(h.due_at) < now ? "Срок прошёл, но пройти ещё можно. " : "";
+    return `${late}${done ? `Moonbridge: пройдено ${done} из ${episodes.length} эпизодов` : "Пройти в Moonbridge"}`;
+  }
   if (!h.needs_file) return "Делается на уроке или в Moonbridge";
   if (h.due_at && new Date(h.due_at) < now) return "Срок прошёл, но сдать ещё можно";
   return "Нужно сдать файлом";
@@ -162,7 +180,11 @@ export async function renderHomework(root: HTMLElement, homeworkId: string, d: H
   const now = d.now ?? new Date();
   const group = dash.groups.find((g) => g.group_id === h.group_id);
   // The grade has its own note below; the status line says which file it is for.
-  const status = el("p", { class: "hw-status", "data-status": h.submission ? "submitted" : "open" }, h.submission?.review ? `Сдано: ${h.submission.file_name}` : homeworkStatus(h, now));
+  const status = el(
+    "p",
+    { class: "hw-status", "data-status": h.submission ? "submitted" : "open" },
+    h.submission?.review ? (h.submission.score ? `Пройдено: ${scoreText(h.submission.score)}` : `Сдано: ${h.submission.file_name}`) : homeworkStatus(h, now),
+  );
   const parts: HTMLElement[] = [
     el("header", { class: "section-head" }, el("a", { href: "/", "data-link": "", class: "back" }, "← Сегодня")),
     el("h1", {}, h.title),
@@ -172,7 +194,24 @@ export async function renderHomework(root: HTMLElement, homeworkId: string, d: H
     ...(h.submission?.review ? [reviewNote(h.submission.review)] : []),
   ];
   if (h.needs_file) parts.push(uploader(h, status, d));
+  if (h.module_id) parts.push(unitPlan(h, d));
   root.replaceChildren(el("div", { class: "card homework-page", "data-homework-page": h.homework_id }, ...parts));
+}
+
+/** A unit homework: its episodes with a tick for each one played, and the button into the hotel. */
+function unitPlan(h: HomeworkView, d: HomeworkPageDeps): HTMLElement {
+  const episodes = h.unit?.episodes ?? [];
+  const next = nextUnitEpisode(h);
+  const allDone = episodes.length > 0 && episodes.every((e) => e.done);
+  return el(
+    "div",
+    { class: "unit-plan", "data-unit": h.module_id ?? "" },
+    el("p", { class: "muted" }, `Юнит Moonbridge «${h.unit?.title ?? h.module_id}». Результат придёт преподавателю сам, когда вы пройдёте все эпизоды.`),
+    el("ul", { class: "unit-episodes" }, ...episodes.map((e) => el("li", { class: e.done ? "done" : "", "data-episode": e.episode_id }, `${e.done ? "✓" : "○"} ${e.title}`))),
+    ...(next
+      ? [el("button", { class: allDone ? "" : "primary", type: "button", "data-play": next, onclick: () => d.navigate(`/moonbridge/episode/${next}`) }, allDone ? "Сыграть ещё раз" : "Играть в Moonbridge")]
+      : [el("p", { class: "muted" }, "Эпизоды этого юнита пока не загружены. Обновите страницу, когда будет интернет.")]),
+  );
 }
 
 /** The teacher's grade and comment on the hand-in. */
@@ -208,7 +247,7 @@ function uploader(h: HomeworkView, status: HTMLElement, d: HomeworkPageDeps): HT
     error.textContent = "";
     try {
       const s = await d.api.uploadSubmission(d.token, h.homework_id, f, (x) => (bar.value = x));
-      status.textContent = `Сдано: ${s.file_name}, ${fileSize(s.size)}`;
+      status.textContent = `Сдано: ${s.file_name}, ${fileSize(s.size ?? f.size)}`;
       status.dataset.status = "submitted";
       send.textContent = "Заменить файл";
       chosen.textContent = "";

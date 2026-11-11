@@ -1,6 +1,6 @@
 import type { ContentBundle, Course } from "@moonbridge/content";
 import { beforeAll, describe, expect, it } from "vitest";
-import { completeEpisode, emptyState, hotelView, migrateState } from "../src/moonbridge/progress.js";
+import { completeEpisode, emptyState, hotelView, migrateState, openedUnits } from "../src/moonbridge/progress.js";
 import { loadBundle } from "./fixtures.js";
 
 let bundle: ContentBundle;
@@ -39,6 +39,33 @@ describe("hotelView", () => {
     expect(v.next).toBeUndefined();
     expect(v.currentUnit).toBeUndefined();
     expect(open(v)).toEqual(["reception", "cafe"]);
+  });
+});
+
+describe("hotelView when the teacher opens the units", () => {
+  it("opens nothing but what the teacher has given", () => {
+    const v = hotelView(bundle.moonbridge!, course, emptyState(), new Set());
+    expect(v.byTeacher).toBe(true);
+    expect(v.next).toBeUndefined();
+    expect(v.places.flatMap((p) => p.episodes).some((e) => e.available)).toBe(false);
+  });
+
+  it("opens a given unit and its place, even ahead of the course, and keeps a played unit open", () => {
+    const v = hotelView(bundle.moonbridge!, course, emptyState(), new Set(["A1_Articles_01"]));
+    expect(open(v)).toContain("cafe");
+    expect(v.next?.episode_id).toBe("articles_in_cafe");
+    expect(v.currentUnit).toBe("A1_Articles_01");
+    const played = hotelView(bundle.moonbridge!, course, completeEpisode(emptyState(), "articles_in_cafe"), new Set());
+    expect(played.places.flatMap((p) => p.episodes).find((e) => e.episode.episode_id === "articles_in_cafe")!.available).toBe(true);
+    expect(played.studiedUnits).toEqual(["A1_Articles_01"]);
+  });
+
+  it("follows the teacher only when every group of the student asks for it", () => {
+    const hw = [{ module_id: "A1_VerbToBe_01" }, { module_id: null }];
+    expect(openedUnits({ groups: [{ unit_access: "assigned" }], homework: hw })).toEqual(new Set(["A1_VerbToBe_01"]));
+    expect(openedUnits({ groups: [{ unit_access: "assigned" }, { unit_access: "course" }], homework: hw })).toBeUndefined();
+    expect(openedUnits({ groups: [], homework: [] })).toBeUndefined();
+    expect(openedUnits(undefined)).toBeUndefined();
   });
 });
 

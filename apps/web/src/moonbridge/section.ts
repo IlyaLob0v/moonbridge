@@ -5,7 +5,7 @@ import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
 import { streakOf, todaysShift, type ShiftPlan } from "./daily.js";
 import { playEpisode } from "./player.js";
-import { completeEpisode, hotelView, markPractice, markShift, migrateState, studentCourse, type HotelView, type MoonbridgeState } from "./progress.js";
+import { completeEpisode, hotelView, markPractice, markShift, migrateState, openedUnits, studentCourse, type HotelView, type MoonbridgeState } from "./progress.js";
 import { playShift, shiftFinale } from "./shift.js";
 
 // The Moonbridge section. It is loaded only when the student opens /moonbridge, so the
@@ -34,9 +34,10 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
   }
   const state = migrateState(await d.kv.get(KEY));
   const episodeId = /^\/moonbridge\/episode\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
-  const view = hotelView(content, course, state);
+  const opened = openedUnits(d.board);
+  const view = hotelView(content, course, state, opened);
   const today = d.learner.day();
-  const plan = await todaysShift(d.learner, state);
+  const plan = await todaysShift(d.learner, state, opened);
 
   if (path === "/moonbridge/shift") {
     if (!plan || !hasWork(plan) || state.shift_days.includes(today)) return d.navigate("/moonbridge");
@@ -48,21 +49,31 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
   }
 
   if (episodeId) {
-    const playable = view.places.filter((p) => p.open).flatMap((p) => p.episodes).find((e) => e.episode.episode_id === episodeId && e.available);
+    // An episode the course has reached, or one of a unit the teacher gave as homework, even
+    // if the student has not got that far in the hotel yet.
+    const homework = d.board?.homework.filter((h) => h.module_id && content.episodes.some((e) => e.episode_id === episodeId && e.module_id === h.module_id)) ?? [];
+    const reached = view.places.filter((p) => p.open).flatMap((p) => p.episodes).find((e) => e.episode.episode_id === episodeId && e.available)?.episode;
+    const playable = reached ?? (homework.length ? content.episodes.find((e) => e.episode_id === episodeId) : undefined);
     if (!playable) return d.navigate("/moonbridge");
-    const result = await playEpisode(root, playable.episode, { content, learner: d.learner, mediaBase: d.mediaBase });
+    const result = await playEpisode(root, playable, { content, learner: d.learner, mediaBase: d.mediaBase });
+    // The result goes to the school before the student opens the homework again.
+    if (homework.length) await d.learner.sync();
     const next: MoonbridgeState = markPractice(completeEpisode(state, result.episodeId), d.learner.day());
     await d.kv.set(KEY, next);
     const before = new Set(view.places.filter((p) => p.open).map((p) => p.place.place_id));
-    const opened = hotelView(content, course, next).places.filter((p) => p.open && !before.has(p.place.place_id));
+    const newPlaces = hotelView(content, course, next, opened).places.filter((p) => p.open && !before.has(p.place.place_id));
+    const assigned = homework.find((h) => !h.submission?.review) ?? homework[0];
     root.replaceChildren(
       el(
         "div",
         { class: "card episode-end", "data-episode-end": result.episodeId },
-        el("h1", {}, playable.episode.title.ru),
+        el("h1", {}, playable.title.ru),
         el("p", {}, `Эпизод пройден. С первого раза: ${result.firstTry.right} из ${result.firstTry.total}.`),
-        ...opened.map((p) => el("p", { class: "unlocked" }, `Открылось новое место: ${p.place.name.ru}`)),
-        el("button", { class: "primary", onclick: () => d.navigate("/moonbridge") }, "В отель"),
+        ...newPlaces.map((p) => el("p", { class: "unlocked" }, `Открылось новое место: ${p.place.name.ru}`)),
+        ...(assigned
+          ? [el("button", { class: "primary", "data-to-homework": assigned.homework_id, onclick: () => d.navigate(`/homework/${assigned.homework_id}`) }, "К домашке")]
+          : []),
+        el("button", { class: assigned ? "" : "primary", onclick: () => d.navigate("/moonbridge") }, "В отель"),
       ),
     );
     return;
@@ -139,7 +150,7 @@ function renderMap(root: HTMLElement, view: HotelView, plan: ShiftPlan | undefin
       "div",
       { class: `room ${p.open ? "open" : "locked"}`, "data-place": p.place.place_id },
       el("h2", {}, p.place.name.ru),
-      el("p", { class: "muted" }, p.open ? `Эпизоды: ${done} из ${p.episodes.length}` : "Закрыто: откроется по ходу курса"),
+      el("p", { class: "muted" }, p.open ? `Эпизоды: ${done} из ${p.episodes.length}` : view.byTeacher ? "Закрыто: откроет преподаватель" : "Закрыто: откроется по ходу курса"),
     );
     if (p.open) {
       const list = el("ul", { class: "episodes" });
@@ -162,7 +173,7 @@ function renderMap(root: HTMLElement, view: HotelView, plan: ShiftPlan | undefin
   }
   const play = view.next
     ? el("button", { class: "primary play-next", onclick: () => d.navigate(`/moonbridge/episode/${view.next!.episode_id}`) }, `Играть: ${view.next.title.ru}`)
-    : el("p", { class: "muted" }, "Все эпизоды пройдены. Новые появятся со следующим юнитом.");
+    : el("p", { class: "muted", "data-no-next": "" }, view.byTeacher ? "Новые эпизоды откроются, когда преподаватель задаст следующий юнит." : "Все эпизоды пройдены. Новые появятся со следующим юнитом.");
   root.replaceChildren(
     el(
       "div",

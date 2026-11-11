@@ -1,6 +1,6 @@
 import type { Sql } from "../db/sql.js";
 
-// A student's money at the school (schema: migrations/006_finance.sql). Each student has a
+// A student's money at the school (schema: migrations/008_finance.sql). Each student has a
 // price per lesson; payments add roubles, every held lesson takes its price, voids and
 // corrections fix mistakes. The balance is the sum of the ledger; lessons left are the balance
 // divided by the price. Access rules live in the routes; the store only reads and writes.

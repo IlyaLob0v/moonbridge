@@ -68,6 +68,8 @@ export interface HotelView {
   places: PlaceView[];
   /** What the "Play" button on the map starts: the first available episode not yet played. */
   next: Episode | undefined;
+  /** Units open when the teacher gives them, not by themselves. */
+  byTeacher: boolean;
 }
 
 /**
@@ -76,30 +78,48 @@ export interface HotelView {
  * played, and units without episodes do not hold anyone back. A place opens when the student
  * reaches the unit that unlocks it; the validator guarantees that is never later than its episodes.
  */
-export function hotelView(content: MoonbridgeContent, course: Course, state: MoonbridgeState): HotelView {
+export function hotelView(content: MoonbridgeContent, course: Course, state: MoonbridgeState, opened?: Set<string>): HotelView {
   const done = new Set(state.completed_episodes);
   const position = new Map(course.units.map((u, i) => [u, i]));
   const inCourse = content.episodes.filter((e) => position.has(e.module_id));
   const pending = inCourse.filter((e) => !done.has(e.episode_id)).map((e) => position.get(e.module_id)!);
   const currentPos = pending.length ? Math.min(...pending) : course.units.length;
-  const reached = (unit: string | null) => unit === null || (position.get(unit) ?? Infinity) <= currentPos;
+  const unitPlayed = (unit: string) => inCourse.some((e) => e.module_id === unit) && inCourse.every((e) => e.module_id !== unit || done.has(e.episode_id));
+  // With `opened` (the group's teacher opens units by giving them as homework), a unit is
+  // reached once it is given or already played; otherwise the course order decides.
+  const reached = opened
+    ? (unit: string | null) => unit === null || opened.has(unit) || unitPlayed(unit)
+    : (unit: string | null) => unit === null || (position.get(unit) ?? Infinity) <= currentPos;
 
   // Map order: open-from-the-start places first, then in the order the course opens them.
   const opensAt = (p: Place) => (p.unlocked_by === null ? -1 : (position.get(p.unlocked_by) ?? Number.MAX_SAFE_INTEGER));
-  const places = [...content.places].sort((a, b) => opensAt(a) - opensAt(b)).map((place) => ({
-    place,
-    open: reached(place.unlocked_by),
-    episodes: inCourse
+  const places = [...content.places].sort((a, b) => opensAt(a) - opensAt(b)).map((place) => {
+    const episodes = inCourse
       .filter((e) => e.place_id === place.place_id)
       .sort((a, b) => position.get(a.module_id)! - position.get(b.module_id)!)
-      .map((episode) => ({ episode, done: done.has(episode.episode_id), available: reached(episode.module_id) })),
-  }));
+      .map((episode) => ({ episode, done: done.has(episode.episode_id), available: reached(episode.module_id) }));
+    return { place, open: reached(place.unlocked_by) || (!!opened && episodes.some((e) => e.available)), episodes };
+  });
   const next = places
     .filter((p) => p.open)
     .flatMap((p) => p.episodes)
     .filter((e) => e.available && !e.done)
     .sort((a, b) => position.get(a.episode.module_id)! - position.get(b.episode.module_id)!)[0]?.episode;
-  return { course, currentUnit: course.units[currentPos], studiedUnits: course.units.slice(0, currentPos), places, next };
+  if (opened) {
+    const current = course.units.find((u) => reached(u) && inCourse.some((e) => e.module_id === u && !done.has(e.episode_id)));
+    return { course, currentUnit: current, studiedUnits: course.units.filter(unitPlayed), places, next, byTeacher: true };
+  }
+  return { course, currentUnit: course.units[currentPos], studiedUnits: course.units.slice(0, currentPos), places, next, byTeacher: false };
+}
+
+/**
+ * The units the teacher has opened for the student: every unit given as homework in their groups.
+ * Undefined (course order) for a student outside a group, or when any of their groups lets units
+ * open by themselves.
+ */
+export function openedUnits(board: { groups: { unit_access?: string }[]; homework: { module_id?: string | null }[] } | undefined): Set<string> | undefined {
+  if (!board?.groups.length || board.groups.some((g) => g.unit_access !== "assigned")) return undefined;
+  return new Set(board.homework.flatMap((h) => (h.module_id ? [h.module_id] : [])));
 }
 
 /** The course the student is on. One course until groups arrive (week 5). */

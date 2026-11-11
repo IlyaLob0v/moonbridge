@@ -5,6 +5,7 @@ import { ProgressBackup } from "./net/backup.js";
 import { askProfile, joinGroup, loadProfile, saveProfile, signIn, signOut } from "./platform/login.js";
 import { loadDashboard, renderHomework } from "./platform/school.js";
 import { renderStudentReport } from "./platform/report.js";
+import { renderCatalog } from "./platform/catalog.js";
 import { renderContent } from "./platform/content.js";
 import { renderBalance, renderFinance } from "./platform/finance.js";
 import { feedbackBox } from "./platform/feedback.js";
@@ -164,6 +165,7 @@ async function boot(): Promise<void> {
     if (path === "/teacher/finance" && session.account?.role === "teacher") return renderFinance(root, { api, token: session.token });
     if (path === "/balance" && session.account?.role === "student" && session.token) return renderBalance(root, { api, token: session.token, accountId: session.account.id });
     if (path === "/teacher/content" && session.account?.role === "teacher") return renderContent(root, { api, token: session.token, kv: local });
+    if (path === "/teacher/catalog" && session.account?.role === "teacher") return renderCatalog(root, { api, token: session.token, kv: local, navigate });
     const metricsGroup = /^\/teacher\/metrics\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (metricsGroup && session.account?.role === "teacher") return renderMetrics(root, metricsGroup, { api, token: session.token });
     const studentId = /^\/teacher\/student\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
