@@ -108,6 +108,8 @@ export interface Place {
   background: string;
   /** The place by day; without it the night art is shown, lit brighter. */
   background_day?: string;
+  /** The place's building on the town map; without it a drawn house stands there. */
+  building?: string;
   /** module_id of the unit that opens the place; null = open from the start. */
   unlocked_by: string | null;
   characters: string[];

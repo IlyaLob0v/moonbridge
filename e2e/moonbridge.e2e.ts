@@ -58,7 +58,9 @@ async function main(): Promise<void> {
     await page.locator(".hotel-map").waitFor();
     check(chunks.some((c) => c.includes("section-")), "the Moonbridge chunk loads on demand");
     check(await page.getByLabel("Имя").count() === 0, "no second sign-in");
-    check(await page.locator('.room.open[data-place="reception"]').isVisible(), "the reception is open");
+    check(await page.locator('.building.open[data-place="reception"]').isVisible(), "the reception's building is open on the town map");
+    check(await page.locator('.building.locked[data-place="lift"]').isVisible(), "the lift's building waits for unit 2");
+    check(await page.locator('.building-panel.open[data-place="reception"]').isVisible(), "the map opens with the reception's quests");
     check(await noSideScroll(), "the map fits a 390 px screen");
     await page.screenshot({ path: `${ARTIFACTS}map.png` });
     await page.locator(".play-next").click();
@@ -108,7 +110,9 @@ async function main(): Promise<void> {
     await page.locator("[data-episode-end] button").click();
     await page.reload();
     await page.locator(".hotel-map").waitFor();
+    await page.locator('.building[data-place="reception"]').click();
     check(await page.locator(`.episode.done[data-episode="${EPISODE}"]`).isVisible(), "the episode stays done");
+    check(Number(await page.locator(".task-windows").getAttribute("data-tasks-right")) >= 3, "the reception's windows light up for the tasks answered right");
     await new Promise((r) => setTimeout(r, 1500));
     check(accepted >= answered.size + 1, `the gateway accepted ${accepted} answer statements`);
     check(await page.locator('[data-shift-card="ready"]').isVisible(), "day 0 already offers a shift with the guest of the day");

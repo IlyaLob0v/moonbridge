@@ -9,6 +9,7 @@ import { background, playEpisode, residentSpeaker } from "./player.js";
 import { completeEpisode, hotelTime, hotelView, markPractice, markShift, migrateState, openedUnits, studentCourse, type HotelView, type MoonbridgeState } from "./progress.js";
 import { playShift, shiftFinale } from "./shift.js";
 import { Sound } from "./sound.js";
+import { buildings, taskWindows, townMap, type Building } from "./town.js";
 
 // The Moonbridge section. It is loaded only when the student opens /moonbridge, so the
 // platform works, and stays light, without it. It keeps nothing but its own game state;
@@ -109,7 +110,8 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
   const fresh = new Set(openNow.filter((id) => !seen.includes(id)));
   if (!state.seen_places || fresh.size) await d.kv.set(KEY, { ...state, seen_places: [...new Set([...seen, ...openNow])] });
   if (fresh.size) sound.play("unlock");
-  renderMap(root, view, plan, state, today, time, fresh, d);
+  const results = await d.learner.taskResults();
+  renderMap(root, view, plan, state, today, time, fresh, results, d);
 }
 
 /**
@@ -205,33 +207,42 @@ function renderMap(
   today: number,
   time: TimeOfDay,
   fresh: Set<string>,
+  results: Map<string, boolean>,
   d: SectionDeps,
 ): void {
   const content = d.learner.bundle.moonbridge!;
-  const map = el("div", { class: "hotel-map" });
   const other = time === "day" ? "ночью" : "днём";
-  for (const p of view.places) {
-    const done = p.episodes.filter((e) => e.done && !e.episode.side).length;
-    const main = p.episodes.filter((e) => !e.episode.side).length;
-    const residents = p.place.characters
+  const freshUnits = new Set(
+    buildings(view, d.learner.bundle, results)
+      .filter((b) => b.place && fresh.has(b.place.place_id))
+      .map((b) => b.unit),
+  );
+  /** The chosen building's quests (the unit's episodes) and its task windows. */
+  const panel = (b: Building): HTMLElement => {
+    const place = b.place;
+    const main = b.quests.filter((q) => !q.episode.side);
+    const residents = (place?.characters ?? [])
       .map((id) => content.characters.find((c) => c.character_id === id))
       .filter((c) => c !== undefined)
       .map((c) => residentSpeaker(c, time))
-      .map((s) => `${s.name}, ${s.speciesRu}`);
+      .map((x) => `${x.name}, ${x.speciesRu}`);
+    const open = b.state !== "locked";
     const room = el(
       "div",
-      { class: `room ${p.open ? "open" : "locked"}${fresh.has(p.place.place_id) ? " just-opened" : ""}`, "data-place": p.place.place_id },
-      ...(p.open ? [el("div", { class: "room-art", "aria-hidden": "true" }, background(p.place, d.mediaBase, time))] : []),
-      el("h2", {}, p.place.name.ru),
-      ...(p.open && residents.length ? [el("p", { class: "room-residents" }, residents.join(" · "))] : []),
-      el("p", { class: "muted" }, p.open ? `Эпизоды: ${done} из ${main}` : view.byTeacher ? "Закрыто: откроет преподаватель" : "Закрыто: откроется по ходу курса"),
+      { class: `room building-panel ${open ? "open" : "locked"}`, "data-unit": b.unit, ...(place ? { "data-place": place.place_id } : {}) },
+      ...(open && place ? [el("div", { class: "room-art", "aria-hidden": "true" }, background(place, d.mediaBase, time))] : []),
+      el("p", { class: "building-kicker" }, `Юнит ${b.number}${place ? ` · ${place.name.ru}` : ""}`),
+      el("h2", {}, b.title),
+      ...(open && residents.length ? [el("p", { class: "room-residents" }, residents.join(" · "))] : []),
+      el("p", { class: "muted" }, open ? `Квесты: ${main.filter((q) => q.done).length} из ${main.length}` : view.byTeacher ? "Закрыто: откроет преподаватель" : "Закрыто: откроется по ходу курса"),
     );
-    if (p.open) {
+    if (open) {
       const list = el("ul", { class: "episodes" });
-      for (const e of p.episodes.filter((x) => x.available)) {
+      for (const e of b.quests.filter((x) => x.available)) {
         const when = e.episode.time_of_day ?? "night";
         const elsewhen = when !== time;
-        const note = [e.episode.side ? "доп. эпизод" : "", elsewhen ? other : ""].filter(Boolean).join(", ");
+        const tasks = e.episode.steps.filter((x) => x.kind === "task").length;
+        const note = [e.episode.side ? "доп. квест" : "", elsewhen ? other : "", `заданий: ${tasks}`].filter(Boolean).join(", ");
         list.append(
           el(
             "li",
@@ -246,15 +257,16 @@ function renderMap(
               },
               el("span", { class: "episode-time", "aria-hidden": "true" }, when === "day" ? "☀" : "☾"),
               `${e.done ? "✓ " : ""}${e.episode.title.ru}`,
-              ...(note ? [el("span", { class: "episode-note" }, note)] : []),
+              el("span", { class: "episode-note" }, note),
             ),
           ),
         );
       }
-      room.append(list);
+      room.append(list, taskWindows(b.tasks));
     }
-    map.append(room);
-  }
+    return room;
+  };
+  const map = townMap(buildings(view, d.learner.bundle, results), { time, mediaBase: d.mediaBase, byTeacher: view.byTeacher, fresh: freshUnits, panel });
   const play = view.next
     ? el("button", { class: "primary play-next", onclick: () => d.navigate(`/moonbridge/episode/${view.next!.episode_id}`) }, `Играть: ${view.next.title.ru}`)
     : el("p", { class: "muted", "data-no-next": "" }, view.byTeacher ? "Новые эпизоды откроются, когда преподаватель задаст следующий юнит." : "Все эпизоды пройдены. Новые появятся со следующим юнитом.");

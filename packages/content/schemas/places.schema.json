@@ -21,6 +21,7 @@
           "name": { "$ref": "#/$defs/localized" },
           "background": { "type": "string", "pattern": "^[a-z0-9_/.-]+$", "description": "The place by night: art path relative to the art folder; a placeholder until the illustrator delivers." },
           "background_day": { "type": "string", "pattern": "^[a-z0-9_/.-]+$", "description": "The place by day; without it the night art is shown." },
+          "building": { "type": "string", "pattern": "^[a-z0-9_/.-]+$", "description": "The place's building on the town map (a transparent picture); without it a drawn house stands there." },
           "unlocked_by": {
             "type": ["string", "null"],
             "pattern": "^(A1|A2|B1|B2|C1|C2)_[A-Za-z0-9]+_[0-9]{2}$",

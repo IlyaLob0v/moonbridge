@@ -185,7 +185,7 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
   const places = (content.moonbridge?.places ?? [])
     .slice()
     .sort((a, b) => (a.unlocked_by === null ? -1 : rank(order, a.unlocked_by)) - (b.unlocked_by === null ? -1 : rank(order, b.unlocked_by)))
-    .map((p) => [p.place_id, p.name.en, p.name.ru, p.background, p.background_day ?? "", p.unlocked_by ?? "", list(p.characters.map((c) => labelOf(speakers, c)))]);
+    .map((p) => [p.place_id, p.name.en, p.name.ru, p.background, p.background_day ?? "", p.building ?? "", p.unlocked_by ?? "", list(p.characters.map((c) => labelOf(speakers, c)))]);
 
   const lists = [
     ["типы заданий", "типы ошибок", "шаги", "эмоции", "навыки", "кто", "уровни", "время суток", "переходы"],
@@ -240,7 +240,7 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
         { column: colOf(episodeCols, EPISODE_COLS.transition), range: range("I", TRANSITIONS.length) },
       ],
     },
-    [SHEETS.places]: { widths: [14, 18, 18, 26, 26, 24, 24] },
+    [SHEETS.places]: { widths: [14, 18, 18, 26, 26, 26, 24, 24] },
     [SHEETS.lists]: { widths: [24, 40, 14, 12, 14, 14, 8, 12, 12] },
   };
   return { book, layout };

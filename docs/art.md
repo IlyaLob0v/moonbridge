@@ -42,3 +42,9 @@ about 900 × 1200. The game moves the picture (steps in, hops, shudders), so no 
 - `reactions` on a character: what they say after a right answer, a typo or a mistake.
 
 The hotel on the map follows the clock (day from 7:00 to 19:00); the ☀ / ☾ button switches it by hand.
+
+## Buildings on the town map
+
+The map has a building per unit; a unit's building is the place it opens. A transparent picture at
+`buildings/<place>.png` (`building` in `places.json`, column «здание» in the sheet), square, about
+400 × 400, replaces the drawn house. Its windows stay drawn by the game only on the drawn house.

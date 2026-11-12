@@ -90,6 +90,7 @@ export const PLACE_COLS = {
   nameRu: "название RU",
   background: "фон",
   backgroundDay: "фон днём",
+  building: "здание",
   unlockedBy: "открывает юнит",
   characters: "жители",
 } as const;

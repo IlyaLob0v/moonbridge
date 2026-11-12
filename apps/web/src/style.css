@@ -377,3 +377,61 @@ body[data-section="moonbridge"][data-time="day"] { --bg: #efe2c6; background: va
 @media (prefers-reduced-motion: reduce) {
   .portrait-frame > *, .scene[data-time="night"] .atmosphere, .dialog .next::after, .chapter-card, .chapter-card > *, .end-overlay, .end-overlay > .card, .star.on, .unlocked, .unlocked::after, .room.just-opened { animation: none; }
 }
+
+/* The town map: a building per unit along a path; the chosen one's quests below */
+@keyframes mb-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(224, 165, 74, 0.55); } 50% { box-shadow: 0 0 0 10px rgba(224, 165, 74, 0); } }
+@keyframes mb-bob { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -4px); } }
+.town-map { margin-top: 12px; }
+.town { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--edge);
+  background: radial-gradient(circle at 80% 6%, rgba(255, 240, 200, 0.18), transparent 30%), radial-gradient(1.5px 1.5px at 20% 12%, #fff8, transparent 60%), radial-gradient(1px 1px at 60% 30%, #fff6, transparent 60%), linear-gradient(180deg, #221c38, #17131f 70%); }
+.town-path { position: absolute; inset: 0; width: 100%; height: 100%; }
+.town-path path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.town-path .road { stroke: rgba(255, 255, 255, 0.14); stroke-width: 14; }
+.town-path .road-walked { stroke: var(--accent); stroke-width: 4; stroke-dasharray: 2 10; opacity: 0.9; }
+.building { position: absolute; transform: translate(-50%, -50%); width: 150px; padding: 0; min-height: 0; background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--ink); text-align: center; }
+.building:hover:not(:disabled) { background: none; }
+.building-art { position: relative; display: block; width: 92px; height: 92px; border-radius: 16px; transition: transform 0.2s; }
+.building:active .building-art { transform: scale(0.95); }
+.building-art svg { width: 100%; height: 100%; display: block; }
+.building-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.building-art.has-art svg { visibility: hidden; }
+.building-art .roof { fill: #6b3f4a; }
+.building-art .wall { fill: #3b3156; stroke: #7e6aa8; stroke-width: 1.5; }
+.building-art .door { fill: #2a2219; }
+.building-art .win { fill: #241f33; stroke: #5d5170; stroke-width: 1; }
+.building-art .win.lit { fill: #ffd27a; stroke: #ffe3a6; filter: drop-shadow(0 0 3px rgba(255, 210, 120, 0.9)); }
+.building-art .lock rect { fill: #8a8195; }
+.building-art .lock path { stroke: #8a8195; stroke-width: 3; }
+.building.locked .building-art { filter: grayscale(1) brightness(0.6); }
+.building.locked .building-name { opacity: 0.6; }
+.building-name { display: flex; flex-direction: column; font-size: 13px; line-height: 1.25; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+.building-name b { font-family: Georgia, serif; font-weight: normal; font-size: 16px; }
+.building-sub { color: var(--ink-dim); font-size: 12px; }
+.building.chosen .building-art { outline: 2px solid var(--accent); outline-offset: 3px; }
+.building.state-current .building-art { animation: mb-pulse 2s ease-in-out infinite; }
+.you-are-here { position: absolute; top: -18px; left: 50%; transform: translate(-50%, 0); background: var(--accent); color: #1d1406; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; animation: mb-bob 1.8s ease-in-out infinite; }
+.building-flag { position: absolute; top: -6px; right: 22px; color: #ffcf5a; font-size: 22px; text-shadow: 0 0 8px rgba(255, 200, 80, 0.7); }
+.building.just-opened .building-art { animation: mb-room-open 1.4s ease-out both; }
+.building-panel-slot { margin-top: 12px; scroll-margin: 12px; }
+.building-panel { animation: mb-pop 0.35s cubic-bezier(.2, .8, .2, 1) both; }
+.building-kicker { color: var(--accent); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin: 0; }
+.task-windows { margin-top: 12px; }
+.windows { display: flex; flex-wrap: wrap; gap: 5px; }
+.window { width: 18px; height: 20px; border-radius: 4px 4px 2px 2px; border: 1px solid var(--edge); background: rgba(0, 0, 0, 0.25); }
+.window.right { background: #ffd27a; border-color: #ffe3a6; box-shadow: 0 0 6px rgba(255, 210, 120, 0.7); }
+.window.wrong { background: repeating-linear-gradient(45deg, rgba(224, 106, 79, 0.55) 0 3px, transparent 3px 6px); border-color: var(--bad); }
+
+.town-map[data-time="day"] .town { background: radial-gradient(circle at 82% 8%, #fff6d2, transparent 25%), linear-gradient(180deg, #bfe0f2, #f3e3c0 75%); border-color: #c8b08a; }
+.town-map[data-time="day"] .town-path .road { stroke: rgba(150, 110, 60, 0.25); }
+.town-map[data-time="day"] .building-name { text-shadow: none; }
+.town-map[data-time="day"] .building-art .roof { fill: #b5523f; }
+.town-map[data-time="day"] .building-art .wall { fill: #f6e8cc; stroke: #b48a5c; }
+.town-map[data-time="day"] .building-art .win { fill: #9cc7de; stroke: #6c96ad; }
+.town-map[data-time="day"] .building-art .win.lit { fill: #ffd27a; stroke: #d39b2e; filter: none; }
+.town-map[data-time="day"] .window { background: rgba(255, 255, 255, 0.6); }
+.town-map[data-time="day"] .window.right { background: #f2b544; border-color: #c98a1a; box-shadow: none; }
+.hotel[data-time="day"] .building, .hotel[data-time="day"] .building:hover:not(:disabled) { background: none; border: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .building.state-current .building-art, .you-are-here, .building.just-opened .building-art, .building-panel { animation: none; }
+}

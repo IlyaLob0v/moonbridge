@@ -346,6 +346,7 @@ export function readSheet(book: Workbook, base: { taxonomy: ErrorTaxonomy; chara
       name: { en: row.get(PLACE_COLS.nameEn), ru: row.get(PLACE_COLS.nameRu) },
       background: row.get(PLACE_COLS.background) || `places/${id}.png`,
       ...(row.get(PLACE_COLS.backgroundDay) ? { background_day: row.get(PLACE_COLS.backgroundDay) } : {}),
+      ...(row.get(PLACE_COLS.building) ? { building: row.get(PLACE_COLS.building) } : {}),
       unlocked_by: unlock && !["сразу", "-", "нет"].includes(key(unlock)) ? unlock : null,
       characters: residents,
     });

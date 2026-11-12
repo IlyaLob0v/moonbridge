@@ -179,6 +179,7 @@ async function main(): Promise<void> {
     check(/Сдано: Запись 1\.m4a/.test(await page.locator('[data-card="homework"]').innerText()), "the hand-in is there");
     await page.locator("[data-section=moonbridge]").click();
     await page.locator(".hotel-map").waitFor();
+    await page.locator(`.building[data-unit="${episode.module_id}"]`).click();
     check(await page.locator(`.episode.done[data-episode="${EPISODE}"]`).isVisible(), "the episode is still done on the new phone");
 
     step("The teacher sees the hand-in");
