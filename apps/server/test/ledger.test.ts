@@ -145,7 +145,7 @@ describe("the balance", () => {
       }
       await expectMatches(app, admin, studentId, m, what);
     }
-  });
+  }, 30_000);
 });
 
 describe("the same action twice at once", () => {

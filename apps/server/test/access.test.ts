@@ -220,7 +220,7 @@ beforeAll(async () => {
     inviteCode: mine.code,
     playerId: anna.account.player_id ?? "",
   };
-});
+}, 30_000);
 
 afterAll(async () => {
   await app.close();

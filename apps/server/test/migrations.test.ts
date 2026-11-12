@@ -124,7 +124,8 @@ describe("upgrading a database with a school in it", () => {
     expect((await app.inject({ url: "/school/review-queue", headers: ksenia })).json().submissions).toEqual([]);
     const metrics = await app.inject({ url: "/school/groups/grp_1/metrics", headers: ksenia });
     expect(metrics.statusCode).toBe(200);
-  });
+    // Two schema builds and password hashing: slower than one test's default 5 s on a shared CI runner.
+  }, 30_000);
 
   it("does nothing the second time", async () => {
     expect(await migrate(sql)).toEqual([]);
