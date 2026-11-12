@@ -1,4 +1,4 @@
-import { ApiError, type Api, type GroupMetrics, type Metric, type MetricStatus, type PilotMetrics } from "../net/api.js";
+import { ApiError, type Api, type EmailCounts, type EmailMetrics, type GroupMetrics, type Metric, type MetricStatus, type PilotMetrics } from "../net/api.js";
 import { el } from "../ui/dom.js";
 import { when } from "./school.js";
 
@@ -128,6 +128,27 @@ function errorTrends(m: PilotMetrics): HTMLElement {
   );
 }
 
+const share = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%` : "—");
+const counts = (c: EmailCounts) => `отправлено ${c.sent}, открыли ${c.clicked} (${share(c.clicked, c.sent)}), занимались после ${c.practiced}`;
+
+/** Did the reminders bring anyone back? Daily e-mails often land in "Промоакции". */
+export function emailBlock(e: EmailMetrics): HTMLElement {
+  const kinds: [keyof EmailMetrics["byKind"], string][] = [
+    ["evening", "Вечером, если не было смены"],
+    ["deadline", "За сутки до срока домашки"],
+    ["grade", "Оценка"],
+  ];
+  return el(
+    "section",
+    { class: "card", "data-email": "" },
+    el("h2", {}, "Напоминания на почту"),
+    el("p", { "data-email-total": "" }, e.sent ? `Вернулись по ссылке из письма: ${e.clicked} из ${e.sent} (${share(e.clicked, e.sent)}), из них занимались в течение 2 часов: ${e.practiced}.` : "Писем пока не было."),
+    el("p", { class: "muted" }, `Почта указана у ${e.withEmail} из ${e.students} учеников${e.unsubscribed ? `, отписались: ${e.unsubscribed}` : ""}.`),
+    el("ul", { class: "metric-weeks" }, ...kinds.map(([k, label]) => el("li", { "data-email-kind": k }, el("span", {}, label), el("span", { class: "muted" }, counts(e.byKind[k]))))),
+    el("ul", { class: "metric-weeks" }, ...e.weeks.map((w, i) => el("li", { "data-email-week": String(i + 1) }, el("span", {}, `${i + 1}. с ${shortDate(w.from)}`), el("span", { class: "muted" }, counts(w))))),
+  );
+}
+
 function feedbackList(g: GroupMetrics, now: Date): HTMLElement {
   if (!g.feedback.length) return el("p", { class: "muted" }, "Сообщений нет. Ученики пишут их кнопкой «Сообщить о проблеме» внизу «Сегодня» и на карте отеля.");
   return el(
@@ -221,6 +242,7 @@ export async function renderMetrics(root: HTMLElement, groupId: string, d: Metri
     el("section", { class: "card" }, el("h2", {}, "По неделям"), weekList(m, m.students.length)),
     el("section", { class: "card" }, el("h2", {}, "Ученики"), studentList(m)),
     el("section", { class: "card" }, el("h2", {}, "Точность по типам ошибок"), errorTrends(m)),
+    ...(g.email ? [emailBlock(g.email)] : []),
     el("section", { class: "card", "data-feedback-count": String(g.feedback.length) }, el("h2", {}, `Сообщения о проблемах: ${g.feedback.length}`), feedbackList(g, now)),
     el(
       "details",
@@ -233,6 +255,7 @@ export async function renderMetrics(root: HTMLElement, groupId: string, d: Metri
         el("li", {}, "Сессия — ответы подряд без перерыва больше 30 минут. Первая сессия дня — обязательная, следующие в тот же день — добровольные."),
         el("li", {}, "Средние берутся по завершённым неделям; пока идёт первая неделя — по ней."),
         el("li", {}, "Бюро находок: вещь вернулась, если первый ответ на неё верный."),
+        el("li", {}, "Письма: «открыли» — нажали кнопку в письме (считается первое нажатие), «занимались после» — ответили хотя бы на одно задание в течение 2 часов после этого."),
         el("li", {}, "Типы ошибок: точность первых попыток по заданиям, где автор предусмотрел этот тип, в первой и последней неделе, где таких попыток 5 и больше. Типы, где в первую неделю уже было 100%, в счёт не идут."),
       ),
     ),

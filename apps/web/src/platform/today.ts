@@ -18,7 +18,7 @@ export interface TodayDeps {
   kv: KeyValue;
   now?: Date;
   /** A signed-in student's or teacher's school; undefined for guests and LMS launches. */
-  school?: { dashboard: Dashboard | undefined; role: "student" | "teacher" | "admin"; onSignOut: () => void; week?: StudentReport; feedback?: HTMLElement };
+  school?: { dashboard: Dashboard | undefined; role: "student" | "teacher" | "admin"; onSignOut: () => void; week?: StudentReport; feedback?: HTMLElement; email?: HTMLElement };
 }
 
 /** The platform's home screen: what to do today, across courses and sections. */
@@ -28,6 +28,9 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
   const course = studentCourse(bundle);
   const due = d.learner.repeats.due(now);
   const cards: HTMLElement[] = [];
+  // No address yet, or not confirmed: asked first, before anything else on the screen.
+  const askEmail = d.school?.email?.dataset.state === "missing" || d.school?.email?.dataset.state === "unverified";
+  if (askEmail) cards.push(d.school!.email!);
   if (d.school?.role === "admin") {
     cards.push(
       el(
@@ -96,6 +99,7 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
       el("header", { class: "platform-head" }, el("div", { class: "brand" }, "Школа английского"), el("h1", {}, `${greeting(now)}, ${d.profile.name}`)),
       el("h2", { class: "today-title" }, "Сегодня"),
       ...cards,
+      ...(d.school?.email && !askEmail ? [d.school.email] : []),
       ...(d.school?.feedback ? [d.school.feedback] : []),
       ...(d.school ? [el("button", { class: "link sign-out", type: "button", onclick: d.school.onSignOut }, "Выйти")] : []),
     ),

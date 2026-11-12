@@ -28,6 +28,7 @@ nano deploy/stand/.env
 - `XAPI_BASE_IRI` — домен школы, например `https://школа.ru`. Попадает во все записи о прогрессе; **после первых ответов учеников не менять.**
 - `SESSION_SECRET`, `ADMIN_TOKEN`, `POSTGRES_PASSWORD`, `LRS_SECRET`, `LRS_ADMIN_PASSWORD` — каждый по отдельности из `openssl rand -hex 32`.
 - `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` — бакет и статический ключ из шага 1.
+- `POSTBOX_ACCESS_KEY_ID`, `POSTBOX_SECRET_ACCESS_KEY`, `MAIL_FROM` — письма ученикам (напоминания и сброс пароля). Как завести Postbox и какие записи добавить в DNS (SPF, DKIM): [email.md](email.md). Можно оставить пустыми: тогда письма видны только в логе шлюза.
 
 `LTI_PRIVATE_KEY` и `LTI_PLATFORMS` не нужны: LTI заморожен.
 
@@ -46,8 +47,10 @@ docker compose -f deploy/stand/compose.yaml --env-file deploy/stand/.env logs -f
 curl -X POST https://app.example.ru/api/admin/teachers \
   -H "Authorization: Bearer <ADMIN_TOKEN из .env>" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Ксения","login":"ksenia","password":"придумайте-пароль"}'
+  -d '{"name":"Ксения","login":"ksenia","password":"придумайте-пароль","email":"ksenia@school.ru"}'
 ```
+
+Почта обязательна: на неё придёт письмо «Подтвердите почту», без подтверждения (когда настроен Postbox) платформа не пустит. Подробнее — [email.md](email.md).
 
 Ответ `201` — можно входить на `https://app.example.ru`. В кабинете «Контент курса» Ксения скачивает таблицу, правит её в Google Таблицах и публикует сама (см. «Курс в таблице» в README).
 

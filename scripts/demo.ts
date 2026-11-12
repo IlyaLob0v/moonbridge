@@ -10,13 +10,13 @@ import { networkInterfaces } from "node:os";
 const ROOT = new URL("..", import.meta.url).pathname;
 const GATEWAY = "http://localhost:8787";
 const ADMIN = "demo-admin-token";
-const TEACHER = { name: "Ксения", login: "ksenia", password: "teach-123" };
+const TEACHER = { name: "Ксения", login: "ksenia", password: "teach-123", email: "ksenia@example.com" };
 /** Handles the money: prices and payments (Финансы школы). */
-const ADMIN_ACCOUNT = { name: "Илья", login: "ilya", password: "admin-123" };
+const ADMIN_ACCOUNT = { name: "Илья", login: "ilya", password: "admin-123", email: "ilya@example.com" };
 const STUDENTS = [
-  { name: "Анна", login: "anna", password: "moon-123" },
-  { name: "Борис", login: "boris", password: "moon-123" },
-  { name: "Вера", login: "vera", password: "moon-123" },
+  { name: "Анна", login: "anna", password: "moon-123", email: "anna@example.com" },
+  { name: "Борис", login: "boris", password: "moon-123", email: "boris@example.com" },
+  { name: "Вера", login: "vera", password: "moon-123", email: "vera@example.com" },
 ];
 const GROUP = "Тестовая группа";
 

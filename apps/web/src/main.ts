@@ -2,11 +2,12 @@ import type { ContentBundle } from "@moonbridge/content";
 import { Learner } from "./core/learner.js";
 import { Api, ApiError, GatewaySink, localSessionStorage, renewGuest, SignedOutError, startSession, type Dashboard, type SessionInfo } from "./net/api.js";
 import { ProgressBackup } from "./net/backup.js";
-import { askProfile, joinGroup, loadProfile, saveProfile, signIn, signOut } from "./platform/login.js";
+import { askProfile, joinGroup, loadProfile, resetPassword, saveProfile, signIn, signOut } from "./platform/login.js";
 import { loadDashboard, renderHomework } from "./platform/school.js";
 import { renderStudentReport } from "./platform/report.js";
 import { renderCatalog } from "./platform/catalog.js";
 import { renderContent } from "./platform/content.js";
+import { emailCard, mustConfirmEmail, renderEmailGate } from "./platform/email.js";
 import { renderFinance } from "./platform/finance.js";
 import { feedbackBox } from "./platform/feedback.js";
 import { openLessonFile, renderGroupLessons, renderStudentLessons } from "./platform/lessons.js";
@@ -66,6 +67,12 @@ async function boot(): Promise<void> {
   const invite = /^\/join\/([A-Za-z0-9]+)$/.exec(location.pathname)?.[1];
   if (invite) {
     await joinGroup(root, api, localSessionStorage, invite);
+    history.replaceState(null, "", "/");
+  }
+  // The link from a password reset e-mail: a new password, then straight in.
+  const reset = /^\/reset\/([\w-]+)$/.exec(location.pathname)?.[1];
+  if (reset) {
+    await resetPassword(root, api, localSessionStorage, reset);
     history.replaceState(null, "", "/");
   }
   if (!localSessionStorage.load() && !location.hash.includes("session=")) {
@@ -145,9 +152,22 @@ async function boot(): Promise<void> {
     if (path !== location.pathname) history.pushState(null, "", path);
     void route();
   };
+  // Until the address is confirmed (where the gateway requires it) every page is the e-mail card.
+  // Checked online only, and no more once confirmed.
+  let emailConfirmed = false;
   const route = async () => {
     const path = location.pathname;
     if (path !== currentPath) [previousPath, currentPath] = [currentPath, path];
+    // Back from the confirmation link: the dashboard below shows the address confirmed.
+    if (new URLSearchParams(location.search).get("email") === "confirmed") history.replaceState(null, "", path);
+    if (session.kind === "account" && session.token && !emailConfirmed) {
+      const board = await dashboard();
+      if (board && mustConfirmEmail(board.account)) {
+        document.body.dataset.section = "platform";
+        return renderEmailGate(root, { api, token: session.token, account: board.account, onSignOut });
+      }
+      if (board) emailConfirmed = true;
+    }
     document.body.dataset.section = path.startsWith("/moonbridge") ? "moonbridge" : "platform";
     if (path === "/moonbridge" || path.startsWith("/moonbridge/")) {
       // A separate chunk: the platform never downloads the game unless the student opens it.
@@ -181,7 +201,19 @@ async function boot(): Promise<void> {
       profile,
       learner,
       kv,
-      ...(session.account ? { school: { dashboard: board, role: session.account.role, onSignOut, feedback: feedback(), ...(week ? { week } : {}) } } : {}),
+      ...(session.account
+        ? {
+            school: {
+              dashboard: board,
+              role: session.account.role,
+              onSignOut,
+              feedback: feedback(),
+              ...(week ? { week } : {}),
+              // Online only: the address is the gateway's, not this phone's.
+              ...(board && session.token ? { email: emailCard({ api, token: session.token, account: board.account }) } : {}),
+            },
+          }
+        : {}),
     });
     cacheLoadedAssets();
   };

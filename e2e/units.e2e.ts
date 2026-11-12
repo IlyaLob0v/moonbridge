@@ -49,12 +49,12 @@ async function main(): Promise<void> {
   const episodeOf = (unit: string) => bundle.moonbridge!.episodes.find((e) => e.module_id === unit)!;
   const unitTitle = bundle.modules.find((m) => m.module_id === GROUP_UNIT)!.title.ru;
 
-  await api("/admin/teachers", { method: "POST", body: JSON.stringify({ name: "Ксения", login: "ksenia", password: "teach-123" }), headers: { authorization: `Bearer ${ADMIN}` } });
+  await api("/admin/teachers", { method: "POST", body: JSON.stringify({ name: "Ксения", login: "ksenia", password: "teach-123", email: "ksenia@example.com" }), headers: { authorization: `Bearer ${ADMIN}` } });
   const { token: t } = await api<{ token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ login: "ksenia", password: "teach-123" }) });
   const { group } = await api<{ group: { group_id: string } }>("/school/groups", { method: "POST", body: JSON.stringify({ name: "A1 вечер", schedule: [{ weekday: 2, time: "18:30", minutes: 60 }] }) }, t);
   const { code } = await api<{ code: string }>(`/school/groups/${group.group_id}/invites`, { method: "POST" }, t);
   for (const s of [{ name: "Анна", login: "anna" }, { name: "Борис", login: "boris" }]) {
-    await api(`/invites/${code}/join`, { method: "POST", body: JSON.stringify({ ...s, password: "moon-123" }) });
+    await api(`/invites/${code}/join`, { method: "POST", body: JSON.stringify({ ...s, password: "moon-123", email: `${s.login}@example.com` }) });
   }
   check(true, "a group with Anna and Boris");
 

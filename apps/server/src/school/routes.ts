@@ -6,11 +6,12 @@ import type { LiveContent } from "../content/live.js";
 import { sheetRoutes } from "../content/routes.js";
 import type { ServerConfig } from "../config.js";
 import type { Session, SessionTokens } from "../session.js";
+import { ACCOUNTS_PER_EMAIL, EMAIL, EMAIL_TAKEN, emailRoutes, normalizeEmail, sendVerification, type MailDeps } from "./email-routes.js";
 import { financeRoutes } from "./finance-routes.js";
 import { FileTooLargeError, type FileStore } from "./files.js";
 import { dashboardLessons, lessonRoutes, weekAttendance, type LessonBilling } from "./lessons.js";
 import { FailureLimiter } from "./limits.js";
-import { pilotMetrics } from "./metrics.js";
+import { emailMetrics, pilotMetrics } from "./metrics.js";
 import { DUMMY_HASH, hashPassword, verifyPassword } from "./passwords.js";
 import { catalog, suggestedGrade, unitEpisodes, unitProgress } from "./units.js";
 import { LoginTakenError, type Account, type Feedback, type Group, type Homework, type PracticeSummary, type SchoolStore, type Submission } from "./store.js";
@@ -24,6 +25,8 @@ export interface SchoolDeps {
   errorLabel?: (errorTypeId: string) => string | undefined;
   /** The live content, which teachers may replace from the content sheet. */
   content?: { live: LiveContent; fetch?: typeof fetch };
+  /** Reminders, unsubscribe and password reset by e-mail. Without it accounts have no e-mail features. */
+  mail?: MailDeps;
   /** Charges a held lesson to the student's balance (school finances); without it lessons are not billed. */
   billing?: LessonBilling;
   now?: () => Date;
@@ -91,6 +94,7 @@ const newAccount = {
     name: { type: "string", minLength: 1, maxLength: 60 },
     login: { type: "string", maxLength: 64 },
     password: { type: "string", minLength: 6, maxLength: 128 },
+    email: { type: "string", maxLength: 254 },
   },
 } as const;
 const slot = {
@@ -114,6 +118,7 @@ interface NewAccountBody {
   name: string;
   login: string;
   password: string;
+  email?: string;
 }
 interface GroupBody {
   name?: string;
@@ -122,7 +127,10 @@ interface GroupBody {
   unit_access?: Group["unitAccess"];
 }
 
-const accountView = (a: Account) => ({ id: a.accountId, name: a.name, role: a.role, login: a.login });
+const baseAccountView = (a: Account) => ({ id: a.accountId, name: a.name, role: a.role, login: a.login, email: a.email, email_verified: a.emailVerified, reminders: a.reminders });
+
+/** What an account with an unconfirmed address may still do: see who it is, and give or confirm the address. */
+const UNVERIFIED_ALLOWED = new Set(["/school/dashboard", "/account/email", "/account/email/resend", "/account/reminders"]);
 const submissionView = (s: Submission) => ({
   submission_id: s.submissionId,
   account_id: s.accountId,
@@ -172,6 +180,8 @@ const groupView = (g: Group) => ({ group_id: g.groupId, name: g.name, teacher_na
  */
 export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise<void> {
   const now = d.now ?? (() => new Date());
+  /** With `email_required` the platform shows only "Подтвердите почту" until `email_verified`. */
+  const accountView = (a: Account) => ({ ...baseAccountView(a), ...(d.mail?.verification ? { email_required: true } : {}) });
 
   const sessionOf = async (req: FastifyRequest): Promise<Session | undefined> => {
     const header = req.headers.authorization;
@@ -184,6 +194,9 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     if (!session || !account) return reply.code(401).send({ error: "sign-in required" });
     req.session = session;
     req.account = account;
+    if (d.mail?.verification && !account.emailVerified && !UNVERIFIED_ALLOWED.has(req.routeOptions.url ?? "")) {
+      return reply.code(403).send({ error: "email_unverified", message: "Подтвердите почту: откройте письмо и нажмите «Подтвердить почту»." });
+    }
   };
 
   const requireTeacher = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -226,8 +239,25 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
       reply.code(400).send({ error: "login", message: "Логин: 3–64 латинские буквы, цифры, точка, дефис или e-mail" });
       return undefined;
     }
+    // The address for reminders and password resets; a login that is an e-mail serves as one.
+    const email = body.email?.trim() ? normalizeEmail(body.email) : EMAIL.test(login) ? login : null;
+    if (email && !EMAIL.test(email)) {
+      reply.code(400).send({ error: "email", message: "Похоже, в адресе почты опечатка. Пример: anna@mail.ru" });
+      return undefined;
+    }
+    // Every account, whatever its role, gives an address and confirms it by the link in an e-mail.
+    if (d.mail && !email) {
+      reply.code(400).send({ error: "email", message: "Укажите почту: на неё придёт письмо для подтверждения" });
+      return undefined;
+    }
+    if (d.mail && email && (await d.mail.store.accountsWith(email)) >= ACCOUNTS_PER_EMAIL) {
+      reply.code(409).send({ error: "email_taken", message: EMAIL_TAKEN });
+      return undefined;
+    }
     try {
-      return await d.school.createAccount({ role, name: body.name.trim(), login, passwordHash: await hashPassword(body.password), ...(playerId ? { playerId } : {}) });
+      const a = await d.school.createAccount({ role, name: body.name.trim(), login, email, passwordHash: await hashPassword(body.password), ...(playerId ? { playerId } : {}) });
+      if (d.mail && email) await sendVerification(d.mail, now(), a, email, app.log);
+      return a;
     } catch (e) {
       if (!(e instanceof LoginTakenError)) throw e;
       reply.code(409).send({ error: "login_taken", message: "Такой логин уже занят" });
@@ -235,7 +265,9 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     }
   };
 
-  app.get("/auth/options", async () => ({ guest: d.config.allowGuest }));
+  app.get("/auth/options", async () => ({ guest: d.config.allowGuest, password_reset: Boolean(d.mail) }));
+
+  if (d.mail) await emailRoutes(app, { school: d.school, mail: d.mail, now, requireAccount, signIn, accountView });
 
   /** Teachers are created by whoever runs the school (ADMIN_TOKEN); students come through invitations. */
   app.post<{ Body: NewAccountBody }>("/admin/teachers", { schema: { body: newAccount } }, async (req, reply) => {
@@ -259,6 +291,8 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
   const clock = () => now().getTime();
   const loginFailures = new FailureLimiter(5, 15 * 60_000, clock);
   const addressFailures = new FailureLimiter(30, 15 * 60_000, clock);
+  // New accounts from one address: a class joining from the school's Wi-Fi fits, a script does not.
+  const newAccounts = new FailureLimiter(30, 60 * 60_000, clock);
 
   app.post<{ Body: { login: string; password: string } }>("/auth/login", { schema: { body: credentials } }, async (req, reply) => {
     const login = normalizeLogin(req.body.login);
@@ -302,8 +336,12 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
       const body = req.body ?? {};
       const valid =
         typeof body.name === "string" && body.name.trim().length >= 1 && body.name.length <= 60 &&
-        typeof body.login === "string" && typeof body.password === "string" && body.password.length >= 6 && body.password.length <= 128;
+        typeof body.login === "string" && typeof body.password === "string" && body.password.length >= 6 && body.password.length <= 128 &&
+        (body.email === undefined || (typeof body.email === "string" && body.email.length <= 254));
       if (!valid) return reply.code(400).send({ error: "fields", message: "Нужны имя, логин и пароль не короче 6 символов" });
+      const wait = newAccounts.retryAfter(req.ip);
+      if (wait) return reply.code(429).header("Retry-After", String(wait)).send({ error: "too_many", message: `Слишком много новых аккаунтов. Попробуйте через ${Math.ceil(wait / 60)} мин.` });
+      newAccounts.fail(req.ip);
       const guest = session && !session.account && !session.lti && !(await d.school.playerTaken(session.playerId)) ? session.playerId : undefined;
       account = await createAccount("student", body as NewAccountBody, reply, guest);
       if (!account) return;
@@ -485,16 +523,28 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     const from = weekStart(set ? new Date(`${set}T12:00:00+03:00`) : ((await d.school.firstAnswerOf(players)) ?? at));
     const to = new Date(Math.max(at.getTime(), from.getTime() + DAY_MS));
     const tasks = d.content?.live.bundle.tasks;
+    const attempts = await d.school.attemptsOf(players, from, to);
     const metrics = pilotMetrics({
       students: members.map((m) => ({ id: m.accountId, name: m.name, playerId: m.playerId })),
-      attempts: await d.school.attemptsOf(players, from, to),
+      attempts,
       from,
       now: to,
       taskErrorTypes: (taskId) => tasks?.[taskId]?.answer.known_errors?.map((k) => k.error_type) ?? [],
       ...(d.errorLabel ? { errorLabel: d.errorLabel } : {}),
     });
     const feedback = await d.school.feedback([req.account!.accountId, ...members.map((m) => m.accountId)], 50);
-    return { group: { id: g.groupId, name: g.name }, pilot_from: set ?? null, metrics, feedback: feedback.map(feedbackView) };
+    const email = d.mail
+      ? emailMetrics({
+          emails: await d.mail.store.sentTo(members.map((m) => m.accountId), from, to),
+          attempts,
+          from,
+          now: to,
+          students: members.length,
+          withEmail: members.filter((m) => m.email && m.emailVerified).length,
+          unsubscribed: members.filter((m) => m.email && m.emailVerified && !m.reminders).length,
+        })
+      : null;
+    return { group: { id: g.groupId, name: g.name }, pilot_from: set ?? null, metrics, email, feedback: feedback.map(feedbackView) };
   });
 
   /** Sets the pilot's first day; weeks are counted from that day's Monday. */

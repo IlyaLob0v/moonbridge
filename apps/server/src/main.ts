@@ -18,6 +18,10 @@ import { MemoryScoreStore } from "./scores.js";
 import { DiskFileStore } from "./school/files.js";
 import { S3FileStore } from "./school/s3.js";
 import { SchoolStore } from "./school/store.js";
+import { MailLinks } from "./mail/links.js";
+import { LogMailer, PostboxMailer } from "./mail/mailer.js";
+import { Reminders } from "./mail/reminders.js";
+import { EmailStore } from "./mail/store.js";
 import { SessionTokens } from "./session.js";
 
 const config = loadConfig();
@@ -72,6 +76,11 @@ if (!db) await migrate(schoolDb);
 const content = new LiveContent(buildBundle(result.content), source, new ContentVersions(schoolDb));
 await content.restore((m) => console.warn(m));
 
+// E-mail: Postbox when configured; otherwise every e-mail goes to the log, links included.
+const mailer = config.postbox ? new PostboxMailer(config.postbox) : new LogMailer();
+const mail = { store: new EmailStore(schoolDb), mailer, links: new MailLinks(config), delivers: Boolean(config.postbox), verification: config.emailVerification };
+const reminders = new Reminders(mail.store, mailer, mail.links, { eveningHour: config.reminderEveningHour }, (e, m) => log(e, m));
+
 const app = await buildApp({
   config,
   bundle: content.bundle,
@@ -85,13 +94,15 @@ const app = await buildApp({
   scores: stores.scores,
   progress: stores.progress,
   toolKeys,
-  school: { store: new SchoolStore(schoolDb), files: config.s3 ? new S3FileStore(config.s3) : new DiskFileStore(config.uploadDir) },
+  school: { store: new SchoolStore(schoolDb), files: config.s3 ? new S3FileStore(config.s3) : new DiskFileStore(config.uploadDir), mail },
 });
 log = (e, m) => app.log.warn({ err: e }, m);
 
 const timers = [
   setInterval(() => void outbox.flush().catch((e) => app.log.error(e, "xAPI flush failed")), 10_000),
   setInterval(() => void grades.flush().catch((e) => app.log.error(e, "AGS flush failed")), 15_000),
+  // Reminders: every 5 minutes is close enough to "in the evening" and "24 hours before".
+  setInterval(() => void reminders.run(new Date()).catch((e) => app.log.error(e, "reminders failed")), 5 * 60_000),
 ];
 app.addHook("onClose", async () => {
   timers.forEach(clearInterval);
@@ -101,6 +112,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => 
 
 if (!db) app.log.warn("DATABASE_URL is not set: accounts, sessions, grades and the xAPI queue live in memory and are lost on restart");
 app.log.info(config.s3 ? `homework files: bucket ${config.s3.bucket} at ${config.s3.endpoint}` : `homework files: ${config.uploadDir}`);
+app.log[config.postbox ? "info" : "warn"](config.postbox ? `e-mail: Postbox, from ${config.postbox.from}` : "POSTBOX_ACCESS_KEY_ID is not set: e-mails (reminders, password resets) go to the log only");
 if (!config.lrs) app.log.warn("LRS_ENDPOINT is not set: xAPI statements are queued but not delivered");
 if (!config.lti.privateKeyPem) app.log.warn("LTI_PRIVATE_KEY is not set: using an ephemeral tool key (dev only)");
 app.log.info(`LTI platforms: ${config.lti.platforms.map((p) => `${p.issuer} (${p.clientId})`).join(", ") || "none"}`);
