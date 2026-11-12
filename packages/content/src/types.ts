@@ -95,10 +95,29 @@ export interface Course {
 
 export type Emotion = "neutral" | "happy" | "upset";
 
+/** Moonbridge lives in two times of day: the hotel by night (the default) and by day. */
+export type TimeOfDay = "night" | "day";
+
+/** How the stage moves to another place inside an episode. */
+export type SceneTransition = "fade" | "lift" | "cut";
+
+/** A short line said in a character's voice, with an optional translation. */
+export interface Say {
+  en: string;
+  ru?: string;
+}
+
+export type Portraits = { neutral: string } & Partial<Record<Exclude<Emotion, "neutral">, string>>;
+
 export interface Place {
   place_id: string;
   name: Localized;
+  /** The place by night. */
   background: string;
+  /** The place by day; without it the night art is shown, lit brighter. */
+  background_day?: string;
+  /** The place's building on the town map; without it a drawn house stands there. */
+  building?: string;
   /** module_id of the unit that opens the place; null = open from the start. */
   unlocked_by: string | null;
   characters: string[];
@@ -109,20 +128,30 @@ export interface Character {
   name: string;
   species: Localized;
   role?: Localized;
-  portraits: { neutral: string } & Partial<Record<Exclude<Emotion, "neutral">, string>>;
+  portraits: Portraits;
+  /** Who the character is by day (Rocco is a werewolf at night and a man by day); without it, the same as at night. */
+  day?: { species: Localized; role?: Localized; portraits: Portraits };
+  /** What the character says after an answer; the player picks one at random. */
+  reactions?: { right?: Say[]; typo?: Say[]; wrong?: Say[] };
 }
 
 export type EpisodeStep =
   | { id: string; kind: "line"; speaker: string; emotion?: Emotion; text: { en: string; ru?: string }; next?: string }
   | { id: string; kind: "task"; task_id: string; speaker?: string; emotion?: Emotion; on_correct?: string; on_wrong?: string }
+  | { id: string; kind: "scene"; place_id: string; transition?: SceneTransition; next?: string }
   | { id: string; kind: "end" };
 
 export interface Episode {
   schema_version: "2.0";
   episode_id: string;
   module_id: string;
+  /** Where the episode starts; a "scene" step moves it elsewhere. */
   place_id: string;
   title: Localized;
+  /** When it happens. Default night. */
+  time_of_day?: TimeOfDay;
+  /** A side quest: extra practice that the unit does not wait for. */
+  side?: boolean;
   steps: EpisodeStep[];
 }
 

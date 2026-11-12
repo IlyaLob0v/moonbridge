@@ -90,6 +90,17 @@ export class Learner {
     return { lastSeen, medians: medianDurations(attempts) };
   }
 
+  /** Each task the student has answered, and whether the latest answer was right: the town map lights windows with it. */
+  async taskResults(): Promise<Map<string, boolean>> {
+    const latest = new Map<string, { at: number; right: boolean }>();
+    for (const a of await this.d.journal.all()) {
+      const at = Date.parse(a.timestamp);
+      const before = latest.get(a.task_id);
+      if (!before || at >= before.at) latest.set(a.task_id, { at, right: a.correct });
+    }
+    return new Map([...latest].map(([id, r]) => [id, r.right]));
+  }
+
   /** The school day of a moment, in the same calendar as the 1/3/7 schedule. */
   day(at: Date = this.now()): number {
     return this.repeats.day(at);

@@ -1,0 +1,82 @@
+{
+  "$schema": "../../../packages/content/schemas/episode.schema.json",
+  "schema_version": "2.0",
+  "episode_id": "A1_NiceToMeetYou_01_morning",
+  "module_id": "A1_NiceToMeetYou_01",
+  "place_id": "reception",
+  "title": { "en": "Morning shift", "ru": "Утренняя смена" },
+  "time_of_day": "day",
+  "side": true,
+  "steps": [
+    {
+      "id": "sunrise",
+      "kind": "line",
+      "speaker": "narrator",
+      "text": {
+        "en": "Morning. The rain has stopped. A tired man with a mop stands behind the desk.",
+        "ru": "Утро. Дождь кончился. За стойкой стоит усталый мужчина со шваброй."
+      }
+    },
+    {
+      "id": "its_me",
+      "kind": "line",
+      "speaker": "rocco",
+      "emotion": "happy",
+      "text": {
+        "en": "Good morning, {name}! Yes, it's me, Rocco. In the day I'm... less hairy.",
+        "ru": "Доброе утро, {name}! Да, это я, Rocco. Днём я... не такой лохматый."
+      }
+    },
+    { "id": "too", "kind": "task", "task_id": "A1_NiceToMeetYou_01_too", "speaker": "rocco", "on_wrong": "too_wrong" },
+    {
+      "id": "too_ok",
+      "kind": "line",
+      "speaker": "rocco",
+      "emotion": "happy",
+      "text": {
+        "en": "Ha! Nice to meet you again. Now, a question for my form.",
+        "ru": "Ха! Приятно познакомиться снова. А теперь вопрос для моей анкеты."
+      },
+      "next": "where"
+    },
+    {
+      "id": "too_wrong",
+      "kind": "line",
+      "speaker": "rocco",
+      "text": { "en": "Never mind. Mornings are hard for everybody. Even for wolves.", "ru": "Ничего. Утром всем тяжело. Даже волкам." }
+    },
+    { "id": "where", "kind": "task", "task_id": "A1_NiceToMeetYou_01_im_from", "speaker": "rocco" },
+    {
+      "id": "never_left",
+      "kind": "line",
+      "speaker": "rocco",
+      "text": {
+        "en": "I've never been there. I never leave the hotel. Every morning the guests ask me one question. Guess it!",
+        "ru": "Никогда там не был. Я вообще не выхожу из отеля. Каждое утро гости задают мне один вопрос. Угадайте какой!"
+      }
+    },
+    { "id": "vampire", "kind": "task", "task_id": "A1_NiceToMeetYou_01_are_you", "speaker": "rocco", "on_wrong": "vampire_wrong" },
+    {
+      "id": "vampire_ok",
+      "kind": "line",
+      "speaker": "rocco",
+      "emotion": "upset",
+      "text": {
+        "en": "No! I'm a werewolf. Only at night. It's a big difference.",
+        "ru": "Нет! Я оборотень. Только ночью. Это большая разница."
+      },
+      "next": "end"
+    },
+    {
+      "id": "vampire_wrong",
+      "kind": "line",
+      "speaker": "rocco",
+      "emotion": "happy",
+      "text": {
+        "en": "\"Are you a vampire?\" That's the question. And the answer is no!",
+        "ru": "«Are you a vampire?» Вот этот вопрос. И ответ — нет!"
+      }
+    },
+    { "id": "end", "kind": "end" }
+  ]
+}

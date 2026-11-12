@@ -339,20 +339,26 @@ function checkMoonbridge(
   const episodes = collectUnique(episodeFiles, (d) => [d], (e) => e.episode_id, "episode_id", err);
   for (const { path, data: ep } of episodeFiles) {
     if (!modules.has(ep.module_id)) err(path, "ref.module", `unit "${ep.module_id}" does not exist`);
-    const place = places.get(ep.place_id);
-    if (!place) err(path, "ref.place", `place "${ep.place_id}" does not exist`);
-    else if (place.unlocked_by !== null && place.unlocked_by !== ep.module_id) {
+    // The episode's own place and every place a scene step moves to.
+    const visited: Place[] = [];
+    const visit = (placeId: string, where: string) => {
+      const place = places.get(placeId);
+      if (!place) return err(where, "ref.place", `place "${placeId}" does not exist`);
+      visited.push(place);
+      if (place.unlocked_by === null || place.unlocked_by === ep.module_id) return;
       // The place must already be open when the student reaches the episode's unit, in every course that has both.
       for (const pos of coursePositions) {
         const opens = pos.get(place.unlocked_by);
         const at = pos.get(ep.module_id);
         if (at !== undefined && (opens === undefined || opens > at)) {
-          err(path, "order.place", `place "${place.place_id}" opens with "${place.unlocked_by}", after unit "${ep.module_id}"`);
+          err(where, "order.place", `place "${place.place_id}" opens with "${place.unlocked_by}", after unit "${ep.module_id}"`);
           break;
         }
       }
-    }
-    checkSteps(ep, path, place, characters, tasks, err, warn);
+    };
+    visit(ep.place_id, path);
+    for (const step of ep.steps) if (step.kind === "scene") visit(step.place_id, `${path} › ${step.id}`);
+    checkSteps(ep, path, visited, characters, tasks, err, warn);
   }
 
   let welcome: Welcome | undefined;
@@ -360,7 +366,7 @@ function checkMoonbridge(
     const place = places.get(data.place_id);
     if (!place) err(path, "ref.place", `place "${data.place_id}" does not exist`);
     else if (place.unlocked_by !== null) warn(path, "welcome.place", `the welcome must take place somewhere open from the start, "${data.place_id}" opens with "${place.unlocked_by}"`);
-    checkSteps(data, path, place, characters, tasks, err, warn);
+    checkSteps(data, path, place ? [place] : [], characters, tasks, err, warn);
     welcome = data;
   }
 
@@ -391,7 +397,7 @@ export function wordKey(en: string): string {
 function checkSteps(
   ep: Episode | Welcome,
   path: string,
-  place: Place | undefined,
+  places: Place[],
   characters: Map<string, Character>,
   tasks: Map<string, { file: string; module_id: string; task: Task }>,
   err: Report,
@@ -405,12 +411,22 @@ function checkSteps(
 
   const successors = (step: EpisodeStep | WelcomeStep, i: number): string[] => {
     const following = ep.steps[i + 1]?.id;
-    const out = step.kind === "line" ? [step.next ?? following] : step.kind === "task" ? [step.on_correct ?? following, step.on_wrong ?? following] : [];
+    const out =
+      step.kind === "line" || step.kind === "scene" ? [step.next ?? following] : step.kind === "task" ? [step.on_correct ?? following, step.on_wrong ?? following] : [];
     return out.filter((id): id is string => id !== undefined);
   };
 
   ep.steps.forEach((step, i) => {
     const where = `${path} › ${step.id}`;
+    if (step.kind === "scene") {
+      if (step.next !== undefined && !index.has(step.next)) err(where, "ref.step", `step "${step.next}" does not exist`);
+      if (successors(step, i).length < 1) err(where, "step.dangling", "the last step must be an end, or name where to go next");
+    }
+    if (step.kind === "line") {
+      for (const [, name] of [...step.text.en.matchAll(/\{([^}]*)\}/g), ...(step.text.ru ?? "").matchAll(/\{([^}]*)\}/g)]) {
+        if (name !== "name") err(where, "text.placeholder", `"{${name}}" is not known; a line may only say {name}`);
+      }
+    }
     if (step.kind === "line" || step.kind === "task") {
       const targets = step.kind === "line" ? [step.next] : [step.on_correct, step.on_wrong];
       for (const target of targets) {
@@ -424,11 +440,12 @@ function checkSteps(
         const character = characters.get(speaker);
         if (!character) err(where, "ref.character", `speaker "${speaker}" does not exist`);
         else {
-          if (step.emotion && step.emotion !== "neutral" && !character.portraits[step.emotion]) {
-            err(where, "ref.emotion", `"${speaker}" has no "${step.emotion}" portrait`);
+          const byDay = "time_of_day" in ep && ep.time_of_day === "day" && character.day;
+          if (step.emotion && step.emotion !== "neutral" && !(byDay ? character.day!.portraits : character.portraits)[step.emotion]) {
+            err(where, "ref.emotion", `"${speaker}" has no "${step.emotion}" portrait${byDay ? " by day" : ""}`);
           }
-          if (place && !place.characters.includes(speaker)) {
-            warn(where, "speaker.elsewhere", `"${speaker}" does not live in "${place.place_id}"`);
+          if (places.length && !places.some((p) => p.characters.includes(speaker))) {
+            warn(where, "speaker.elsewhere", `"${speaker}" does not live in ${places.map((p) => `"${p.place_id}"`).join(" or ")}`);
           }
         }
       }

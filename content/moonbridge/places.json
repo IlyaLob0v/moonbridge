@@ -5,28 +5,36 @@
     {
       "place_id": "reception",
       "name": { "en": "Reception", "ru": "Ресепшен" },
-      "background": "places/reception.webp",
+      "background": "places/reception.png",
+      "background_day": "places/reception-day.png",
+      "building": "buildings/reception.png",
       "unlocked_by": null,
       "characters": ["rocco"]
     },
     {
       "place_id": "lift",
       "name": { "en": "Lift", "ru": "Лифт" },
-      "background": "places/lift.webp",
+      "background": "places/lift.png",
+      "background_day": "places/lift-day.png",
+      "building": "buildings/lift.png",
       "unlocked_by": "A1_WhereAreYouFrom_02",
       "characters": ["lev"]
     },
     {
       "place_id": "lobby",
       "name": { "en": "Lobby", "ru": "Лобби" },
-      "background": "places/lobby.webp",
+      "background": "places/lobby.png",
+      "background_day": "places/lobby-day.png",
+      "building": "buildings/lobby.png",
       "unlocked_by": "A1_ThisIsMyRoom_03",
       "characters": ["kai"]
     },
     {
       "place_id": "cafe",
       "name": { "en": "Night Café", "ru": "Night Café" },
-      "background": "places/cafe.webp",
+      "background": "places/cafe.png",
+      "background_day": "places/cafe-day.png",
+      "building": "buildings/cafe.png",
       "unlocked_by": "A1_NightCafe_04",
       "characters": ["pip"]
     }

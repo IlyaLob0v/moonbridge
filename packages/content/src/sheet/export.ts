@@ -19,6 +19,8 @@ import {
   STEP_KINDS,
   TASK_COLS,
   TASK_TYPES,
+  TIMES,
+  TRANSITIONS,
   UNIT_COLS,
   WORD_COLS,
 } from "./format.js";
@@ -154,6 +156,8 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
           [EPISODE_COLS.place]: first ? ep.place_id : "",
           [EPISODE_COLS.titleEn]: first ? ep.title.en : "",
           [EPISODE_COLS.titleRu]: first ? ep.title.ru : "",
+          [EPISODE_COLS.time]: first && ep.time_of_day ? labelOf(TIMES, ep.time_of_day) : "",
+          [EPISODE_COLS.side]: first && ep.side !== undefined ? (ep.side ? "да" : "нет") : "",
           // Generated names stay out of the sheet: the importer gives them back.
           [EPISODE_COLS.step]: s.id === `step_${i + 1}` ? "" : s.id,
           [EPISODE_COLS.kind]: labelOf(STEP_KINDS, s.kind),
@@ -165,6 +169,11 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
         if (s.kind === "line") {
           row[EPISODE_COLS.textEn] = s.text.en;
           row[EPISODE_COLS.textRu] = s.text.ru ?? "";
+          row[EPISODE_COLS.next] = s.next ?? "";
+        }
+        if (s.kind === "scene") {
+          row[EPISODE_COLS.to] = s.place_id;
+          row[EPISODE_COLS.transition] = s.transition ? labelOf(TRANSITIONS, s.transition) : "";
           row[EPISODE_COLS.next] = s.next ?? "";
         }
         if (s.kind === "task") {
@@ -180,10 +189,10 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
   const places = (content.moonbridge?.places ?? [])
     .slice()
     .sort((a, b) => (a.unlocked_by === null ? -1 : rank(order, a.unlocked_by)) - (b.unlocked_by === null ? -1 : rank(order, b.unlocked_by)))
-    .map((p) => [p.place_id, p.name.en, p.name.ru, p.background, p.unlocked_by ?? "", list(p.characters.map((c) => labelOf(speakers, c)))]);
+    .map((p) => [p.place_id, p.name.en, p.name.ru, p.background, p.background_day ?? "", p.building ?? "", p.unlocked_by ?? "", list(p.characters.map((c) => labelOf(speakers, c)))]);
 
   const lists = [
-    ["типы заданий", "типы ошибок", "шаги", "эмоции", "навыки", "кто", "уровни"],
+    ["типы заданий", "типы ошибок", "шаги", "эмоции", "навыки", "кто", "уровни", "время суток", "переходы"],
     ...Array.from({ length: Math.max(TASK_TYPES.length, errorTypes.length, speakers.length) }, (_, i) => [
       TASK_TYPES[i]?.[1] ?? "",
       errorTypes[i]?.[1] ?? "",
@@ -192,6 +201,8 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
       SKILLS[i]?.[1] ?? "",
       speakers[i]?.[1] ?? "",
       LEVELS[i] ?? "",
+      TIMES[i]?.[1] ?? "",
+      TRANSITIONS[i]?.[1] ?? "",
     ]),
   ];
   const range = (col: string, count: number) => `'${SHEETS.lists}'!$${col}$2:$${col}$${count + 1}`;
@@ -225,16 +236,18 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
       ],
     },
     [SHEETS.episodes]: {
-      widths: [16, 24, 12, 22, 22, 12, 10, 12, 11, 40, 40, 18, 12, 12, 12],
+      widths: [16, 24, 12, 22, 22, 10, 10, 12, 12, 12, 11, 40, 40, 18, 12, 12, 12, 12, 12],
       lists: [
         { column: colOf(episodeCols, EPISODE_COLS.kind), range: range("C", STEP_KINDS.length) },
         { column: colOf(episodeCols, EPISODE_COLS.emotion), range: range("D", EMOTIONS.length) },
         { column: colOf(episodeCols, EPISODE_COLS.speaker), range: range("F", speakers.length) },
+        { column: colOf(episodeCols, EPISODE_COLS.time), range: range("H", TIMES.length) },
+        { column: colOf(episodeCols, EPISODE_COLS.transition), range: range("I", TRANSITIONS.length) },
       ],
     },
-    [SHEETS.places]: { widths: [14, 18, 18, 26, 24, 24] },
+    [SHEETS.places]: { widths: [14, 18, 18, 26, 26, 26, 24, 24] },
     [SHEETS.words]: { widths: [24, 26, 30, 50] },
-    [SHEETS.lists]: { widths: [24, 40, 10, 12, 14, 14, 8] },
+    [SHEETS.lists]: { widths: [24, 40, 14, 12, 14, 14, 8, 12, 12] },
   };
   return { book, layout };
 }

@@ -21,7 +21,8 @@ const taskSteps = (e: Episode) => e.steps.filter((s) => s.kind === "task").lengt
 
 /** The episodes of a unit that the student plays for it. */
 export function unitEpisodes(bundle: ContentBundle, moduleId: string): Episode[] {
-  return bundle.moonbridge?.episodes.filter((e) => e.module_id === moduleId) ?? [];
+  // Side quests are extra practice: the homework does not wait for them.
+  return bundle.moonbridge?.episodes.filter((e) => e.module_id === moduleId && !e.side) ?? [];
 }
 
 /** Every unit in course order (then the units no course lists), with its episodes. */

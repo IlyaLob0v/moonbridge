@@ -4,9 +4,12 @@ import { nextLesson, openHomework, when } from "../platform/school.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
 import { streakOf, todaysShift, type ShiftPlan } from "./daily.js";
-import { playEpisode, playWelcome } from "./player.js";
-import { completeEpisode, hotelView, markPractice, markShift, markWelcomed, migrateState, openedUnits, studentCourse, type HotelView, type MoonbridgeState } from "./progress.js";
+import type { Place, TimeOfDay } from "@moonbridge/content";
+import { background, playEpisode, playWelcome, residentSpeaker } from "./player.js";
+import { completeEpisode, hotelTime, hotelView, markPractice, markShift, markWelcomed, migrateState, openedUnits, studentCourse, type HotelView, type MoonbridgeState } from "./progress.js";
 import { playShift, shiftFinale } from "./shift.js";
+import { Sound } from "./sound.js";
+import { buildings, taskWindows, townMap, type Building } from "./town.js";
 import { playReview, renderWords, reviewFinale } from "./words-view.js";
 import { myWords, reviewQueue, WordDeck, type MyWord } from "./words.js";
 
@@ -23,11 +26,22 @@ export interface SectionDeps {
   board?: Dashboard;
   /** "Сообщить о проблеме" under the hotel map, for signed-in testers. */
   feedback?: () => HTMLElement;
-  /** The student's name, for {name} in the welcome scene. */
+  /** The student's name, for the lines that say {name}. */
   playerName?: string;
 }
 
 const KEY = "moonbridge";
+
+/** One for the whole visit: the student's sound choice and the ambience carry from scene to scene. */
+const sound = new Sound();
+
+/** The platform calls this when the student leaves the hotel: the rain stays behind. */
+export function stopSound(): void {
+  sound.stopAmbience();
+}
+
+/** The first name is enough for Rocco. */
+const firstName = (name: string | undefined) => name?.trim().split(/\s+/)[0];
 
 export async function mountMoonbridge(root: HTMLElement, path: string, d: SectionDeps): Promise<void> {
   const content = d.learner.bundle.moonbridge;
@@ -42,13 +56,18 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
   const view = hotelView(content, course, state, opened);
   const today = d.learner.day();
   const plan = await todaysShift(d.learner, state, opened);
+  const time = hotelTime(state, d.learner.now());
+  document.body.dataset.time = time;
+  const name = firstName(d.playerName);
+  const playerDeps = { content, learner: d.learner, mediaBase: d.mediaBase, sound, ...(name ? { playerName: name } : {}) };
+
   const deck = await WordDeck.load(d.kv);
   const words = myWords(d.learner.bundle, course, state, deck, d.learner.now());
   const wordsDeps = { navigate: d.navigate, now: () => d.learner.now() };
 
   // The first visit opens on the welcome scene instead of the map; /moonbridge/welcome replays it.
   if (content.welcome && (path === "/moonbridge/welcome" || (path === "/moonbridge" && !state.welcomed))) {
-    await playWelcome(root, content.welcome, { content, learner: d.learner, mediaBase: d.mediaBase, name: d.playerName ?? "" });
+    await playWelcome(root, content.welcome, { ...playerDeps, name: name ?? "" }, time);
     await d.kv.set(KEY, markWelcomed(migrateState(await d.kv.get(KEY))));
     root.replaceChildren(
       el(
@@ -79,10 +98,10 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
 
   if (path === "/moonbridge/shift") {
     if (!plan || !hasWork(plan) || state.shift_days.includes(today)) return d.navigate("/moonbridge");
-    const result = await playShift(root, plan, { content, learner: d.learner, mediaBase: d.mediaBase });
+    const result = await playShift(root, plan, { ...playerDeps, time });
     const next = markShift(migrateState(await d.kv.get(KEY)), plan.day);
     await d.kv.set(KEY, next);
-    root.replaceChildren(shiftFinale(plan, result, streakOf(next.practice_days, plan.day).days, () => d.navigate("/moonbridge")));
+    overStage(root, shiftFinale(plan, result, streakOf(next.practice_days, plan.day).days, () => d.navigate("/moonbridge")));
     return;
   }
 
@@ -93,7 +112,8 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
     const reached = view.places.filter((p) => p.open).flatMap((p) => p.episodes).find((e) => e.episode.episode_id === episodeId && e.available)?.episode;
     const playable = reached ?? (homework.length ? content.episodes.find((e) => e.episode_id === episodeId) : undefined);
     if (!playable) return d.navigate("/moonbridge");
-    const result = await playEpisode(root, playable, { content, learner: d.learner, mediaBase: d.mediaBase });
+    const unitNo = course.units.indexOf(playable.module_id) + 1;
+    const result = await playEpisode(root, playable, playerDeps, unitNo > 0 ? { number: unitNo } : {});
     // The result goes to the school before the student opens the homework again.
     if (homework.length) await d.learner.sync();
     const next: MoonbridgeState = markPractice(completeEpisode(state, result.episodeId), d.learner.day());
@@ -101,22 +121,58 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
     const before = new Set(view.places.filter((p) => p.open).map((p) => p.place.place_id));
     const newPlaces = hotelView(content, course, next, opened).places.filter((p) => p.open && !before.has(p.place.place_id));
     const assigned = homework.find((h) => !h.submission?.review) ?? homework[0];
-    root.replaceChildren(
-      el(
-        "div",
-        { class: "card episode-end", "data-episode-end": result.episodeId },
-        el("h1", {}, playable.title.ru),
-        el("p", {}, `Эпизод пройден. С первого раза: ${result.firstTry.right} из ${result.firstTry.total}.`),
-        ...newPlaces.map((p) => el("p", { class: "unlocked" }, `Открылось новое место: ${p.place.name.ru}`)),
-        ...(assigned
-          ? [el("button", { class: "primary", "data-to-homework": assigned.homework_id, onclick: () => d.navigate(`/homework/${assigned.homework_id}`) }, "К домашке")]
-          : []),
-        el("button", { class: assigned ? "" : "primary", onclick: () => d.navigate("/moonbridge") }, "В отель"),
-      ),
+    const { right, total } = result.firstTry;
+    const stars = !total || right === total ? 3 : right * 2 >= total ? 2 : 1;
+    const end = el(
+      "div",
+      { class: "card episode-end", "data-episode-end": result.episodeId },
+      el("p", { class: "end-kicker" }, "Эпизод пройден"),
+      el("h1", {}, playable.title.ru),
+      el("div", { class: "stars", role: "img", "aria-label": `${stars} из 3` }, ...[1, 2, 3].map((i) => el("span", { class: i <= stars ? "star on" : "star" }, "★"))),
+      el("p", {}, `С первого раза: ${right} из ${total}.`),
+      ...newPlaces.map((p) => unlockedPlace(p.place, time, d.mediaBase)),
+      ...(assigned
+        ? [el("button", { class: "primary", "data-to-homework": assigned.homework_id, onclick: () => d.navigate(`/homework/${assigned.homework_id}`) }, "К домашке")]
+        : []),
+      el("button", { class: assigned ? "" : "primary", onclick: () => d.navigate("/moonbridge") }, "В отель"),
     );
+    overStage(root, end);
+    sound.play(newPlaces.length ? "unlock" : "right");
     return;
   }
-  renderMap(root, view, plan, state, today, words, d);
+  // Places the student has not seen open yet get their moment on the map. The first visit after
+  // this feature arrived counts every open place as seen, so nobody gets a flood of old news.
+  const openNow = view.places.filter((p) => p.open).map((p) => p.place.place_id);
+  const seen = state.seen_places ?? openNow;
+  const fresh = new Set(openNow.filter((id) => !seen.includes(id)));
+  if (!state.seen_places || fresh.size) await d.kv.set(KEY, { ...state, seen_places: [...new Set([...seen, ...openNow])] });
+  if (fresh.size) sound.play("unlock");
+  const results = await d.learner.taskResults();
+  renderMap(root, view, plan, state, today, time, fresh, results, words, d);
+}
+
+/**
+ * The end of an episode or a shift as a card over the last scene: the place stays behind,
+ * the dialog steps aside. Without a scene (nothing was played), the card alone.
+ */
+function overStage(root: HTMLElement, card: HTMLElement): void {
+  const scene = root.querySelector<HTMLElement>(".scene");
+  if (!scene) return root.replaceChildren(card);
+  scene.classList.add("ended");
+  scene.querySelector(".dialog-wrap")?.remove();
+  scene.querySelector(".portrait")?.replaceChildren();
+  scene.append(el("div", { class: "end-overlay" }, card));
+}
+
+/** The news of a new place: its picture in a frame, with a burst of light. */
+function unlockedPlace(place: Place, time: TimeOfDay, mediaBase: string): HTMLElement {
+  return el(
+    "div",
+    { class: "unlocked", "data-unlocked": place.place_id },
+    el("div", { class: "unlocked-art" }, background(place, mediaBase, time)),
+    el("p", { class: "unlocked-kicker" }, "Открылось новое место"),
+    el("p", { class: "unlocked-name" }, place.name.ru),
+  );
 }
 
 /** «Мои слова» on the map: how many words, and how many wait for review. */
@@ -192,43 +248,100 @@ function shiftCard(plan: ShiftPlan | undefined, state: MoonbridgeState, today: n
   );
 }
 
-function renderMap(root: HTMLElement, view: HotelView, plan: ShiftPlan | undefined, state: MoonbridgeState, today: number, words: MyWord[], d: SectionDeps): void {
-  const map = el("div", { class: "hotel-map" });
-  for (const p of view.places) {
-    const done = p.episodes.filter((e) => e.done).length;
+function renderMap(
+  root: HTMLElement,
+  view: HotelView,
+  plan: ShiftPlan | undefined,
+  state: MoonbridgeState,
+  today: number,
+  time: TimeOfDay,
+  fresh: Set<string>,
+  results: Map<string, boolean>,
+  words: MyWord[],
+  d: SectionDeps,
+): void {
+  const content = d.learner.bundle.moonbridge!;
+  const other = time === "day" ? "ночью" : "днём";
+  const freshUnits = new Set(
+    buildings(view, d.learner.bundle, results)
+      .filter((b) => b.place && fresh.has(b.place.place_id))
+      .map((b) => b.unit),
+  );
+  /** The chosen building's quests (the unit's episodes) and its task windows. */
+  const panel = (b: Building): HTMLElement => {
+    const place = b.place;
+    const main = b.quests.filter((q) => !q.episode.side);
+    const residents = (place?.characters ?? [])
+      .map((id) => content.characters.find((c) => c.character_id === id))
+      .filter((c) => c !== undefined)
+      .map((c) => residentSpeaker(c, time))
+      .map((x) => `${x.name}, ${x.speciesRu}`);
+    const open = b.state !== "locked";
     const room = el(
       "div",
-      { class: `room ${p.open ? "open" : "locked"}`, "data-place": p.place.place_id },
-      el("h2", {}, p.place.name.ru),
-      el("p", { class: "muted" }, p.open ? `Эпизоды: ${done} из ${p.episodes.length}` : view.byTeacher ? "Закрыто: откроет преподаватель" : "Закрыто: откроется по ходу курса"),
+      { class: `room building-panel ${open ? "open" : "locked"}`, "data-unit": b.unit, ...(place ? { "data-place": place.place_id } : {}) },
+      ...(open && place ? [el("div", { class: "room-art", "aria-hidden": "true" }, background(place, d.mediaBase, time))] : []),
+      el("p", { class: "building-kicker" }, `Юнит ${b.number}${place ? ` · ${place.name.ru}` : ""}`),
+      el("h2", {}, b.title),
+      ...(open && residents.length ? [el("p", { class: "room-residents" }, residents.join(" · "))] : []),
+      el("p", { class: "muted" }, open ? `Квесты: ${main.filter((q) => q.done).length} из ${main.length}` : view.byTeacher ? "Закрыто: откроет преподаватель" : "Закрыто: откроется по ходу курса"),
     );
-    if (p.open) {
+    if (open) {
       const list = el("ul", { class: "episodes" });
-      for (const e of p.episodes.filter((x) => x.available)) {
+      for (const e of b.quests.filter((x) => x.available)) {
+        const when = e.episode.time_of_day ?? "night";
+        const elsewhen = when !== time;
+        const tasks = e.episode.steps.filter((x) => x.kind === "task").length;
+        const note = [e.episode.side ? "доп. квест" : "", elsewhen ? other : "", `заданий: ${tasks}`].filter(Boolean).join(", ");
         list.append(
           el(
             "li",
             {},
             el(
               "button",
-              { class: e.done ? "episode done" : "episode", "data-episode": e.episode.episode_id, onclick: () => d.navigate(`/moonbridge/episode/${e.episode.episode_id}`) },
+              {
+                class: `episode${e.done ? " done" : ""}${elsewhen ? " other-time" : ""}${e.episode.side ? " side" : ""}`,
+                "data-episode": e.episode.episode_id,
+                "data-time": when,
+                onclick: () => d.navigate(`/moonbridge/episode/${e.episode.episode_id}`),
+              },
+              el("span", { class: "episode-time", "aria-hidden": "true" }, when === "day" ? "☀" : "☾"),
               `${e.done ? "✓ " : ""}${e.episode.title.ru}`,
+              el("span", { class: "episode-note" }, note),
             ),
           ),
         );
       }
-      room.append(list);
+      room.append(list, taskWindows(b.tasks));
     }
-    map.append(room);
-  }
+    return room;
+  };
+  const map = townMap(buildings(view, d.learner.bundle, results), { time, mediaBase: d.mediaBase, byTeacher: view.byTeacher, fresh: freshUnits, panel });
   const play = view.next
     ? el("button", { class: "primary play-next", onclick: () => d.navigate(`/moonbridge/episode/${view.next!.episode_id}`) }, `Играть: ${view.next.title.ru}`)
     : el("p", { class: "muted", "data-no-next": "" }, view.byTeacher ? "Новые эпизоды откроются, когда преподаватель задаст следующий юнит." : "Все эпизоды пройдены. Новые появятся со следующим юнитом.");
+  const switchTime = el(
+    "button",
+    {
+      class: "time-toggle",
+      type: "button",
+      "data-time-toggle": time,
+      "aria-label": time === "day" ? "Сейчас день. Дождаться ночи" : "Сейчас ночь. Дождаться утра",
+      onclick: async () => {
+        sound.unlock();
+        sound.play("whoosh");
+        await d.kv.set(KEY, { ...migrateState(await d.kv.get(KEY)), time: time === "day" ? "night" : "day" });
+        d.navigate("/moonbridge");
+      },
+    },
+    time === "day" ? "☀ День" : "☾ Ночь",
+  );
+  sound.setAmbience(undefined);
   root.replaceChildren(
     el(
       "div",
-      { class: "hotel" },
-      el("header", { class: "section-head" }, el("a", { href: "/", "data-link": "", class: "back" }, "← Платформа"), el("h1", {}, "Hotel Hello")),
+      { class: "hotel", "data-time": time },
+      el("header", { class: "section-head" }, el("a", { href: "/", "data-link": "", class: "back" }, "← Платформа"), el("h1", {}, "Hotel Hello"), switchTime),
       ...[lobbyBoard(d.board, d), shiftCard(plan, state, today, d)].filter((x): x is HTMLElement => x !== undefined),
       play,
       wordsCard(words, d),

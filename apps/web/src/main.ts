@@ -146,6 +146,8 @@ async function boot(): Promise<void> {
   // The page a tester reports from, and the one before it: a report sent from Today is often about the game.
   let previousPath = "";
   let currentPath = location.pathname;
+  /** The Moonbridge chunk, once the student has opened the hotel: leaving it silences the rain. */
+  let moonbridge: typeof import("./moonbridge/section.js") | undefined;
   const feedback = () =>
     feedbackBox({ api, token: () => (session.kind === "account" ? session.token : undefined), page: () => (previousPath && previousPath !== currentPath ? `${currentPath} (до этого ${previousPath})` : currentPath) });
   const navigate = (path: string) => {
@@ -171,11 +173,20 @@ async function boot(): Promise<void> {
     document.body.dataset.section = path.startsWith("/moonbridge") ? "moonbridge" : "platform";
     if (path === "/moonbridge" || path.startsWith("/moonbridge/")) {
       // A separate chunk: the platform never downloads the game unless the student opens it.
-      const { mountMoonbridge } = await import("./moonbridge/section.js");
+      moonbridge = await import("./moonbridge/section.js");
       cacheLoadedAssets();
       const board = await dashboard();
-      return mountMoonbridge(root, path, { learner, kv, mediaBase, navigate, playerName: profile.name, ...(board ? { board } : {}), ...(session.kind === "account" ? { feedback } : {}) });
+      return moonbridge.mountMoonbridge(root, path, {
+        learner,
+        kv,
+        mediaBase,
+        navigate,
+        playerName: profile.name,
+        ...(board ? { board } : {}),
+        ...(session.kind === "account" ? { feedback } : {}),
+      });
     }
+    moonbridge?.stopSound();
     const homeworkId = /^\/homework\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (homeworkId && session.kind === "account") return renderHomework(root, homeworkId, { api, token: session.token, kv: local, navigate });
     if (path === "/lessons" && session.kind === "account") return renderStudentLessons(root, { api, token: session.token, kv: local });

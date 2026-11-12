@@ -181,6 +181,7 @@ async function main(): Promise<void> {
     check(/Сдано: Запись 1\.m4a/.test(await page.locator('[data-card="homework"]').innerText()), "the hand-in is there");
     await page.locator("[data-section=moonbridge]").click();
     await page.locator(".hotel-map").waitFor();
+    await page.locator(`.building[data-unit="${episode.module_id}"]`).click();
     check(await page.locator(`.episode.done[data-episode="${EPISODE}"]`).isVisible(), "the episode is still done on the new phone");
 
     step("The teacher sees the hand-in");
@@ -326,7 +327,7 @@ async function main(): Promise<void> {
     await teacher.locator(".content-link a[href=\"/teacher/content\"]").click();
     await teacher.locator("[data-content-hash]").waitFor();
     const before = await teacher.locator("[data-content-hash]").getAttribute("data-content-hash");
-    check(/4 юнита, 45 заданий, 4 эпизода/.test(await teacher.locator("[data-content-hash]").innerText()), "the content page counts units 1–4");
+    check(/4 юнита, 45 заданий, 5 эпизодов/.test(await teacher.locator("[data-content-hash]").innerText()), "the content page counts units 1–4");
     const [sheetDownload] = await Promise.all([teacher.waitForEvent("download"), teacher.locator("[data-download-sheet]").click()]);
     check(sheetDownload.suggestedFilename() === "moonbridge-content.xlsx", "the teacher downloads the course as a sheet");
     const book = readXlsx(await readFile((await sheetDownload.path())!));
