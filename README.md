@@ -43,6 +43,7 @@ pnpm content:bundle     # собрать dist/content-bundle.json
 pnpm content:export     # курс в таблицу dist/moonbridge-content.xlsx
 pnpm content:import <файл.xlsx | ссылка на Google Таблицу>   # таблицу обратно в content/*.json
 pnpm test               # все тесты
+pnpm test:coverage      # то же с покрытием; CI падает, если покрытие ниже порога из vitest.config.ts
 pnpm typecheck
 pnpm check              # всё, что проверяет CI, одной командой
 pnpm dev:server         # шлюз на http://localhost:8787 (настройки: apps/server/.env.example)
@@ -52,6 +53,7 @@ pnpm e2e:school         # только школа: преподаватель, �
 pnpm e2e:pilot          # репетиция пилота: три ученика пять дней, затем страница метрик
 pnpm demo               # платформа для ручного теста: данные в data/demo/, готовые аккаунты, адрес для телефона в той же Wi-Fi
 
+sh scripts/stand-smoke.sh   # Docker-образы стенда вместе: Postgres, шлюз в production, Caddy (так же в CI)
 docker compose -f deploy/stand/compose.yaml --env-file deploy/stand/.env up -d --build   # стенд на сервере (docs/stand.md)
 pnpm lms:up             # стенд в Docker: Postgres, LRS, Moodle (docs/lms-setup.md)
 pnpm lrs:errors to_be.i_am   # ошибки по концепту за неделю из LRS
