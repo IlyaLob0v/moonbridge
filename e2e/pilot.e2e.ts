@@ -14,7 +14,7 @@
 import { mkdir } from "node:fs/promises";
 import type { ContentBundle, Task } from "@moonbridge/content";
 import { chromium, type BrowserContext, type Page } from "playwright";
-import { answerRight, ARTIFACTS, check, GATEWAY, noSideScroll, PHONE, startServers, step, stopServers, WEB } from "./lib.js";
+import { answerRight, ARTIFACTS, check, GATEWAY, hotelMap, noSideScroll, PHONE, startServers, step, stopServers, WEB } from "./lib.js";
 
 const ADMIN = "e2e-admin-token";
 const DAY_MS = 24 * 3600_000;
@@ -156,7 +156,7 @@ async function main(): Promise<void> {
           await page.getByRole("heading", { name: new RegExp(s.name) }).waitFor();
         }
         await page.goto(`${WEB}/moonbridge`);
-        await page.locator(".hotel-map").waitFor();
+        await hotelMap(page);
 
         const shiftCard = page.locator('[data-shift-card="ready"]');
         if (await shiftCard.isVisible()) {

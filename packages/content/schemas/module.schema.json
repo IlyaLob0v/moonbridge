@@ -45,6 +45,20 @@
         "pass_score": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
       }
     },
+    "words": {
+      "type": "array",
+      "description": "The unit's words and phrases for the student's own dictionary («Мои слова»). A word enters it once the student plays an episode of the unit, and comes back for review on a spaced schedule.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["en", "ru"],
+        "properties": {
+          "en": { "type": "string", "minLength": 1, "description": "The word or phrase in English, as the student should recall it." },
+          "ru": { "type": "string", "minLength": 1, "description": "Its translation: the side the student sees first in a review." },
+          "example": { "type": "string", "minLength": 1, "description": "A line from the unit's episodes or tasks that uses it." }
+        }
+      }
+    },
     "tasks": {
       "type": "array",
       "minItems": 1,

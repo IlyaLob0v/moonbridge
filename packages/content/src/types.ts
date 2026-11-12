@@ -36,7 +36,15 @@ export interface Module {
   prerequisites: string[];
   concepts: Concept[];
   mastery: { check_task_count: number; pass_score: number };
+  /** Words for the student's own dictionary («Мои слова»); they enter it once an episode of the unit is played. */
+  words?: Word[];
   tasks: string[];
+}
+
+export interface Word {
+  en: string;
+  ru: string;
+  example?: string;
 }
 
 export interface KnownError {
@@ -144,12 +152,25 @@ export interface DailyContent {
   lost_items: LostItem[];
 }
 
+export type WelcomeStep =
+  | { id: string; kind: "line"; speaker: string; emotion?: Emotion; text: Localized; next?: string }
+  | { id: string; kind: "end" };
+
+/** The scene of a student's first visit to the hotel: lines only, both languages shown, {name} = the student. */
+export interface Welcome {
+  schema_version: "2.0";
+  place_id: string;
+  title: Localized;
+  steps: WelcomeStep[];
+}
+
 /** The Moonbridge section's content. The platform works without it. */
 export interface MoonbridgeContent {
   places: Place[];
   characters: Character[];
   episodes: Episode[];
   daily?: DailyContent;
+  welcome?: Welcome;
 }
 
 export interface ErrorType {
@@ -181,6 +202,7 @@ export interface ContentSource {
   characters?: SourceFile[];
   episodes?: SourceFile[];
   daily?: SourceFile[];
+  welcome?: SourceFile[];
 }
 
 /** Validated content, flattened and indexed: this is what the platform, Moonbridge and the engine consume. */

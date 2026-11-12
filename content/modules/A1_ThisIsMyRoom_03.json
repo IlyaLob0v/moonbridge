@@ -42,5 +42,17 @@
     "A1_ThisIsMyRoom_03_people",
     "A1_ThisIsMyRoom_03_boxes",
     "A1_ThisIsMyRoom_03_find_error"
+  ],
+  "words": [
+    { "en": "There is …", "ru": "Есть …, находится …", "example": "There is a piano in the lobby." },
+    { "en": "There are …", "ru": "Есть … (много)", "example": "There are three bats in the lobby." },
+    { "en": "lobby", "ru": "лобби, холл", "example": "There is a piano in the lobby." },
+    { "en": "key", "ru": "ключ", "example": "These keys are for room 13." },
+    { "en": "bed", "ru": "кровать", "example": "There is a bed and two windows in my room." },
+    { "en": "window", "ru": "окно", "example": "Don't open the window at full moon." },
+    { "en": "friend", "ru": "друг", "example": "These are my friends." },
+    { "en": "people", "ru": "люди", "example": "One person, two people." },
+    { "en": "bat", "ru": "летучая мышь", "example": "There are three bats in the lobby." },
+    { "en": "over there", "ru": "вон там", "example": "Look at that man over there!" }
   ]
 }

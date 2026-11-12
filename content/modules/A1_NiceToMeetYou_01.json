@@ -32,5 +32,18 @@
     "A1_NiceToMeetYou_01_translate_tired",
     "A1_NiceToMeetYou_01_choose_translation",
     "A1_NiceToMeetYou_01_find_error"
+  ],
+  "words": [
+    { "en": "Good evening", "ru": "Добрый вечер", "example": "Good evening! Welcome to Hotel Hello." },
+    { "en": "Welcome", "ru": "Добро пожаловать", "example": "Welcome to Hotel Hello." },
+    { "en": "Nice to meet you", "ru": "Приятно познакомиться", "example": "Nice to meet you, Rocco." },
+    { "en": "Nice to meet you too", "ru": "Мне тоже приятно познакомиться", "example": "— Nice to meet you! — Nice to meet you too." },
+    { "en": "guest", "ru": "гость", "example": "I am a new guest." },
+    { "en": "room", "ru": "номер (в отеле), комната", "example": "You are in room 13." },
+    { "en": "name", "ru": "имя", "example": "My name is Anna." },
+    { "en": "What is your name?", "ru": "Как вас зовут?", "example": "What is your name?" },
+    { "en": "I'm from …", "ru": "Я из …", "example": "I'm from Russia." },
+    { "en": "tired", "ru": "уставший", "example": "I'm tired, but I'm happy to be here." },
+    { "en": "happy", "ru": "радостный, счастливый", "example": "I'm happy to be here." }
   ]
 }

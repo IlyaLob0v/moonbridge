@@ -38,5 +38,17 @@
     "A1_NightCafe_04_fifteen",
     "A1_NightCafe_04_listen_pip",
     "A1_NightCafe_04_choose_price"
+  ],
+  "words": [
+    { "en": "Can I have …, please?", "ru": "Можно мне …, пожалуйста?", "example": "Can I have a tea, please?" },
+    { "en": "What would you like?", "ru": "Что желаете?", "example": "Pip: Hi! What would you like?" },
+    { "en": "a cup of tea", "ru": "чашка чая", "example": "And a cup of moon tea." },
+    { "en": "coffee", "ru": "кофе", "example": "Can I have a coffee, please?" },
+    { "en": "apple pie", "ru": "яблочный пирог", "example": "Can I have an apple pie, please?" },
+    { "en": "the bill", "ru": "счёт", "example": "Can I have the bill, please?" },
+    { "en": "How much is …?", "ru": "Сколько стоит …?", "example": "How much is the cake?" },
+    { "en": "cake", "ru": "торт, пирожное", "example": "How much is the cake?" },
+    { "en": "coins", "ru": "монеты", "example": "That's twenty coins, please." },
+    { "en": "favourite", "ru": "любимый", "example": "Moon tea is my favourite." }
   ]
 }

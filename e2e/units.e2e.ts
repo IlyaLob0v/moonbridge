@@ -12,7 +12,7 @@
 // Run: pnpm e2e:units        (HEADED=1 to watch it)
 import { mkdir } from "node:fs/promises";
 import { chromium, type Page } from "playwright";
-import { ARTIFACTS, check, finishEpisode, GATEWAY, noSideScroll, PHONE, startServers, step, stopServers, WEB } from "./lib.js";
+import { ARTIFACTS, check, finishEpisode, GATEWAY, hotelMap, noSideScroll, PHONE, startServers, step, stopServers, WEB } from "./lib.js";
 
 const ADMIN = "e2e-admin-token";
 const GROUP_UNIT = "A1_WhereAreYouFrom_02";
@@ -146,6 +146,7 @@ async function main(): Promise<void> {
     const boris = await open();
     await signIn(boris, "boris", "moon-123");
     await boris.locator("[data-section=moonbridge]").click();
+    await hotelMap(boris);
     await boris.locator("[data-board-homework]").first().waitFor();
     check((await boris.locator("[data-board-homework]").count()) === 2, "the lobby board shows both units Boris has to play");
     await boris.locator("[data-board-homework]", { hasText: "Приятно познакомиться" }).click();

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonbridge.example.com/schemas/welcome.schema.json",
+  "title": "Moonbridge welcome",
+  "description": "The scene a student sees the first time they open the hotel: who they are here, what a day in the hotel looks like, what the course brings. Lines only, nothing is graded. Both languages show at once, since the student does not know the hotel's rules yet. {name} in a line becomes the student's name.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "place_id", "title", "steps"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": "2.0" },
+    "place_id": { "$ref": "#/$defs/id" },
+    "title": { "$ref": "#/$defs/localized" },
+    "steps": {
+      "type": "array",
+      "minItems": 2,
+      "description": "The first step is the start. Without next a step continues with the step below it.",
+      "items": { "oneOf": [{ "$ref": "#/$defs/line" }, { "$ref": "#/$defs/end" }] }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "localized": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["en", "ru"],
+      "properties": { "en": { "type": "string", "minLength": 1 }, "ru": { "type": "string", "minLength": 1 } }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "speaker", "text"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "const": "line" },
+        "speaker": { "type": "string", "pattern": "^[a-z0-9_]+$", "description": "character_id, or \"narrator\"." },
+        "emotion": { "enum": ["neutral", "happy", "upset"] },
+        "text": { "$ref": "#/$defs/localized" },
+        "next": { "$ref": "#/$defs/id" }
+      }
+    },
+    "end": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "kind": { "const": "end" } }
+    }
+  }
+}

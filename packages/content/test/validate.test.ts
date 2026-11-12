@@ -253,3 +253,48 @@ describe("normalizeAnswer", () => {
     expect(normalizeAnswer("Went", true)).toBe("Went");
   });
 });
+
+describe("the welcome scene and the units' words", () => {
+  const live = () => load(CONTENT_DIR);
+  const welcome = (src: ContentSource) => src.welcome![0]!.data as any;
+
+  it("ships the live welcome and words into the bundle", async () => {
+    const result = validateContent(await live());
+    expect(result.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const bundle = buildBundle(result.content!);
+    expect(bundle.moonbridge!.welcome!.steps.at(-1)!.kind).toBe("end");
+    expect(bundle.modules.every((m) => (m.words?.length ?? 0) > 0)).toBe(true);
+  });
+
+  it("checks the welcome like an episode: places, speakers, steps", async () => {
+    const src = await live();
+    welcome(src).place_id = "nowhere";
+    welcome(src).steps[1].speaker = "dracula";
+    welcome(src).steps[2].next = "missing";
+    expect(codes(src)).toEqual(expect.arrayContaining(["ref.place", "ref.character", "ref.step"]));
+  });
+
+  it("refuses tasks in the welcome and a second welcome file", async () => {
+    const src = await live();
+    welcome(src).steps.splice(1, 0, { id: "quiz", kind: "task", task_id: "A1_NiceToMeetYou_01_hello" });
+    expect(codes(src)).toContain("schema");
+    const two = await live();
+    two.welcome!.push(structuredClone(two.welcome![0]!));
+    expect(codes(two)).toContain("moonbridge.files");
+  });
+
+  it("warns when the welcome happens somewhere still closed on the first visit", async () => {
+    const src = await live();
+    welcome(src).place_id = "cafe";
+    const result = validateContent(src);
+    expect(result.ok).toBe(true);
+    expect(result.issues.map((i) => i.code)).toContain("welcome.place");
+  });
+
+  it("refuses the same word twice in a unit, whatever the case and spaces", async () => {
+    const src = await live();
+    const m = src.modules[0]!.data as any;
+    m.words.push({ en: `  ${m.words[0].en.toUpperCase()} `, ru: "ещё раз" });
+    expect(codes(src)).toContain("duplicate.word");
+  });
+});
