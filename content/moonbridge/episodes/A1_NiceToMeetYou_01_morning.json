@@ -23,8 +23,8 @@
       "speaker": "rocco",
       "emotion": "happy",
       "text": {
-        "en": "Good morning, {player}! Yes, it's me, Rocco. In the day I'm... less hairy.",
-        "ru": "Доброе утро, {player}! Да, это я, Rocco. Днём я... не такой лохматый."
+        "en": "Good morning, {name}! Yes, it's me, Rocco. In the day I'm... less hairy.",
+        "ru": "Доброе утро, {name}! Да, это я, Rocco. Днём я... не такой лохматый."
       }
     },
     { "id": "too", "kind": "task", "task_id": "A1_NiceToMeetYou_01_too", "speaker": "rocco", "on_wrong": "too_wrong" },

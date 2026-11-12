@@ -7,6 +7,7 @@ import placesSchema from "../schemas/places.schema.json" with { type: "json" };
 import charactersSchema from "../schemas/characters.schema.json" with { type: "json" };
 import episodeSchema from "../schemas/episode.schema.json" with { type: "json" };
 import dailySchema from "../schemas/daily.schema.json" with { type: "json" };
+import welcomeSchema from "../schemas/welcome.schema.json" with { type: "json" };
 import { normalizeAnswer, tokenize } from "./normalize.js";
 import type {
   Character,
@@ -22,6 +23,8 @@ import type {
   SourceFile,
   Task,
   TaskSet,
+  Welcome,
+  WelcomeStep,
 } from "./types.js";
 
 export type Severity = "error" | "warning";
@@ -59,6 +62,7 @@ const validators = {
   characters: ajv.compile(charactersSchema),
   episode: ajv.compile(episodeSchema),
   daily: ajv.compile(dailySchema),
+  welcome: ajv.compile(welcomeSchema),
 };
 
 function schemaPass<T>(files: SourceFile[], validate: ValidateFunction, issues: Issue[]): SourceFile<T>[] {
@@ -100,14 +104,15 @@ export function validateContent(source: ContentSource): ValidationResult {
   const characterFiles = schemaPass<{ characters: Character[] }>(source.characters ?? [], validators.characters, issues);
   const episodeFiles = schemaPass<Episode>(source.episodes ?? [], validators.episode, issues);
   const dailyFiles = schemaPass<DailyContent>(source.daily ?? [], validators.daily, issues);
+  const welcomeFiles = schemaPass<Welcome>(source.welcome ?? [], validators.welcome, issues);
 
   if (source.taxonomy.length !== 1) {
     err("taxonomy/", "taxonomy.count", `expected exactly one error taxonomy file, found ${source.taxonomy.length}`);
   }
   if (source.courses.length === 0) err("courses/", "course.count", "expected at least one course file");
-  const hasMoonbridge = [source.places, source.characters, source.episodes, source.daily].some((f) => (f?.length ?? 0) > 0);
-  if (hasMoonbridge && (source.places?.length !== 1 || source.characters?.length !== 1 || (source.daily?.length ?? 0) > 1)) {
-    err("moonbridge/", "moonbridge.files", "Moonbridge needs exactly one places.json and one characters.json, and at most one daily.json");
+  const hasMoonbridge = [source.places, source.characters, source.episodes, source.daily, source.welcome].some((f) => (f?.length ?? 0) > 0);
+  if (hasMoonbridge && (source.places?.length !== 1 || source.characters?.length !== 1 || (source.daily?.length ?? 0) > 1 || (source.welcome?.length ?? 0) > 1)) {
+    err("moonbridge/", "moonbridge.files", "Moonbridge needs exactly one places.json and one characters.json, and at most one daily.json and one welcome.json");
   }
   // Cross-file checks only make sense on schema-valid data; stop here otherwise.
   if (issues.some((i) => i.severity === "error")) return { ok: false, issues };
@@ -129,6 +134,12 @@ export function validateContent(source: ContentSource): ValidationResult {
       continue;
     }
     modules.set(m.module_id, { file: path, module: m });
+    const words = new Set<string>();
+    for (const w of m.words ?? []) {
+      const id = wordKey(w.en);
+      if (words.has(id)) err(`${path} › ${w.en}`, "duplicate.word", `word "${w.en}" is listed twice in the unit`);
+      words.add(id);
+    }
     for (const c of m.concepts) {
       const owner = conceptOwner.get(c.concept_id);
       if (owner) err(path, "duplicate.concept_id", `concept "${c.concept_id}" is already defined in module "${owner}"`);
@@ -217,7 +228,7 @@ export function validateContent(source: ContentSource): ValidationResult {
   }
 
   const moonbridge = hasMoonbridge
-    ? checkMoonbridge(placeFiles, characterFiles, episodeFiles, dailyFiles, modules, tasks, positions, err, warn)
+    ? checkMoonbridge(placeFiles, characterFiles, episodeFiles, dailyFiles, welcomeFiles, modules, tasks, positions, err, warn)
     : undefined;
 
   const ok = !issues.some((i) => i.severity === "error");
@@ -300,6 +311,7 @@ function checkMoonbridge(
   characterFiles: SourceFile<{ characters: Character[] }>[],
   episodeFiles: SourceFile<Episode>[],
   dailyFiles: SourceFile<DailyContent>[],
+  welcomeFiles: SourceFile<Welcome>[],
   modules: Map<string, { file: string; module: Module }>,
   tasks: Map<string, { file: string; module_id: string; task: Task }>,
   coursePositions: Map<string, number>[],
@@ -349,6 +361,15 @@ function checkMoonbridge(
     checkSteps(ep, path, visited, characters, tasks, err, warn);
   }
 
+  let welcome: Welcome | undefined;
+  for (const { path, data } of welcomeFiles) {
+    const place = places.get(data.place_id);
+    if (!place) err(path, "ref.place", `place "${data.place_id}" does not exist`);
+    else if (place.unlocked_by !== null) warn(path, "welcome.place", `the welcome must take place somewhere open from the start, "${data.place_id}" opens with "${place.unlocked_by}"`);
+    checkSteps(data, path, place ? [place] : [], characters, tasks, err, warn);
+    welcome = data;
+  }
+
   let daily: DailyContent | undefined;
   for (const { path, data } of dailyFiles) {
     const guests = collectUnique([{ path, data }], (d) => d.guests, (g) => g.guest_id, "guest_id", err);
@@ -359,11 +380,22 @@ function checkMoonbridge(
     daily = { guests: [...guests.values()], lost_items: [...items.values()] };
   }
 
-  return { places: [...places.values()], characters: [...characters.values()], episodes: [...episodes.values()], ...(daily ? { daily } : {}) };
+  return {
+    places: [...places.values()],
+    characters: [...characters.values()],
+    episodes: [...episodes.values()],
+    ...(daily ? { daily } : {}),
+    ...(welcome ? { welcome } : {}),
+  };
+}
+
+/** Words are told apart by their English side, ignoring case and spaces: "Good evening" = "good  evening". */
+export function wordKey(en: string): string {
+  return en.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function checkSteps(
-  ep: Episode,
+  ep: Episode | Welcome,
   path: string,
   places: Place[],
   characters: Map<string, Character>,
@@ -377,7 +409,7 @@ function checkSteps(
     else index.set(step.id, i);
   });
 
-  const successors = (step: EpisodeStep, i: number): string[] => {
+  const successors = (step: EpisodeStep | WelcomeStep, i: number): string[] => {
     const following = ep.steps[i + 1]?.id;
     const out =
       step.kind === "line" || step.kind === "scene" ? [step.next ?? following] : step.kind === "task" ? [step.on_correct ?? following, step.on_wrong ?? following] : [];
@@ -392,7 +424,7 @@ function checkSteps(
     }
     if (step.kind === "line") {
       for (const [, name] of [...step.text.en.matchAll(/\{([^}]*)\}/g), ...(step.text.ru ?? "").matchAll(/\{([^}]*)\}/g)]) {
-        if (name !== "player") err(where, "text.placeholder", `"{${name}}" is not known; a line may only say {player}`);
+        if (name !== "name") err(where, "text.placeholder", `"{${name}}" is not known; a line may only say {name}`);
       }
     }
     if (step.kind === "line" || step.kind === "task") {
@@ -408,7 +440,7 @@ function checkSteps(
         const character = characters.get(speaker);
         if (!character) err(where, "ref.character", `speaker "${speaker}" does not exist`);
         else {
-          const byDay = ep.time_of_day === "day" && character.day;
+          const byDay = "time_of_day" in ep && ep.time_of_day === "day" && character.day;
           if (step.emotion && step.emotion !== "neutral" && !(byDay ? character.day!.portraits : character.portraits)[step.emotion]) {
             err(where, "ref.emotion", `"${speaker}" has no "${step.emotion}" portrait${byDay ? " by day" : ""}`);
           }
@@ -421,10 +453,10 @@ function checkSteps(
     if (step.kind === "task") {
       const t = tasks.get(step.task_id);
       if (!t) err(where, "ref.task", `task "${step.task_id}" does not exist`);
-      else if (t.module_id !== ep.module_id) err(where, "ref.task", `task "${step.task_id}" belongs to unit "${t.module_id}", not "${ep.module_id}"`);
+      else if ("module_id" in ep && t.module_id !== ep.module_id) err(where, "ref.task", `task "${step.task_id}" belongs to unit "${t.module_id}", not "${ep.module_id}"`);
     }
   });
-  if (!ep.steps.some((s) => s.kind === "task")) warn(path, "episode.no_tasks", "the episode has no tasks");
+  if ("episode_id" in ep && !ep.steps.some((s) => s.kind === "task")) warn(path, "episode.no_tasks", "the episode has no tasks");
 
   // Every step must be reachable from the start, and an end must be reachable from every step.
   const graph = new Map(ep.steps.map((s, i) => [s.id, successors(s, i).filter((id) => index.has(id))]));

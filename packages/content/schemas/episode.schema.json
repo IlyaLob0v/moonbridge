@@ -18,7 +18,7 @@
     "steps": {
       "type": "array",
       "minItems": 2,
-      "description": "The first step is the start. Without next / on_correct / on_wrong a step continues with the step below it. A line may say {player}: the student's name.",
+      "description": "The first step is the start. Without next / on_correct / on_wrong a step continues with the step below it. A line may say {name}: the student's name.",
       "items": { "oneOf": [{ "$ref": "#/$defs/line" }, { "$ref": "#/$defs/task" }, { "$ref": "#/$defs/scene" }, { "$ref": "#/$defs/end" }] }
     }
   },

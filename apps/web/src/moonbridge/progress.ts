@@ -8,6 +8,8 @@ export interface MoonbridgeState {
   practice_days: number[];
   /** School days whose daily shift is finished. */
   shift_days: number[];
+  /** The welcome scene has been seen (or skipped): the hotel opens on its map from now on. */
+  welcomed: boolean;
   /** Places whose opening the student has seen on the map; undefined until the map first shows. */
   seen_places?: string[];
   /** Day or night chosen on the map; undefined = by the clock. */
@@ -15,7 +17,7 @@ export interface MoonbridgeState {
 }
 
 export function emptyState(): MoonbridgeState {
-  return { version: 1, completed_episodes: [], practice_days: [], shift_days: [] };
+  return { version: 1, completed_episodes: [], practice_days: [], shift_days: [], welcomed: false };
 }
 
 /** The hotel's time of day: what the student chose on the map, or the clock (day from 7:00 to 19:00). */
@@ -31,14 +33,21 @@ const numbers = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is
 export function migrateState(raw: unknown): MoonbridgeState {
   const r = raw as Partial<MoonbridgeState> | undefined;
   if (r?.version !== 1 || !Array.isArray(r.completed_episodes)) return emptyState();
+  const completed = r.completed_episodes.filter((e) => typeof e === "string");
   return {
     version: 1,
-    completed_episodes: r.completed_episodes.filter((e) => typeof e === "string"),
+    completed_episodes: completed,
     practice_days: numbers(r.practice_days),
     shift_days: numbers(r.shift_days),
+    // A student who played before the welcome existed knows the hotel already.
+    welcomed: r.welcomed === true || completed.length > 0,
     ...(Array.isArray(r.seen_places) ? { seen_places: r.seen_places.filter((p) => typeof p === "string") } : {}),
     ...(r.time === "day" || r.time === "night" ? { time: r.time } : {}),
   };
+}
+
+export function markWelcomed(state: MoonbridgeState): MoonbridgeState {
+  return state.welcomed ? state : { ...state, welcomed: true };
 }
 
 /** Keeps the last 60 days: enough for any streak and the week view, small enough to back up. */

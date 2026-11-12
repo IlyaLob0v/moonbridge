@@ -30,6 +30,7 @@ export function buildBundle(content: ValidatedContent, builtAt = new Date()): Co
                   },
                 }
               : {}),
+            ...(content.moonbridge.welcome ? { welcome: content.moonbridge.welcome } : {}),
           },
         }
       : {}),

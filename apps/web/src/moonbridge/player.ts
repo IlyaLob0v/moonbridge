@@ -1,4 +1,4 @@
-import type { Character, Emotion, Episode, MoonbridgeContent, Place, Say, SceneTransition, Task, TimeOfDay } from "@moonbridge/content";
+import type { Character, Emotion, Episode, MoonbridgeContent, Place, Say, SceneTransition, Task, TimeOfDay, Welcome } from "@moonbridge/content";
 import type { SubmitResult } from "@moonbridge/learning";
 import type { Learner } from "../core/learner.js";
 import { el } from "../ui/dom.js";
@@ -10,7 +10,7 @@ export interface PlayerDeps {
   content: MoonbridgeContent;
   learner: Learner;
   mediaBase: string;
-  /** The student's name: lines say it where the author wrote {player}. */
+  /** The student's name: lines say it where the author wrote {name}. */
   playerName?: string;
   sound?: Sound;
 }
@@ -46,7 +46,7 @@ export function placeArt(place: Place, time: TimeOfDay): string {
 }
 
 export function withName(text: string, name: string | undefined, lang: "en" | "ru"): string {
-  return text.replaceAll("{player}", name?.trim() || (lang === "en" ? "friend" : "друг"));
+  return text.replaceAll("{name}", name?.trim() || (lang === "en" ? "friend" : "друг"));
 }
 
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -185,8 +185,8 @@ export class Stage {
     return Promise.resolve();
   }
 
-  /** A line typed out letter by letter. A tap shows all of it, "Дальше" (or a second tap) goes on. */
-  line(en: string, ru?: string): Promise<void> {
+  /** A line typed out letter by letter. A tap shows all of it, "Дальше" (or a second tap) goes on. `showRu` puts the translation under it at once. */
+  line(en: string, ru?: string, showRu = false): Promise<void> {
     const name = this.d.playerName;
     const textEn = withName(en, name, "en");
     const textRu = ru === undefined ? undefined : withName(ru, name, "ru");
@@ -195,7 +195,8 @@ export class Stage {
       const rest = el("span", { class: "rest", "aria-hidden": "true" }, textEn);
       const text = el("p", { class: "line-text", lang: "en" }, typed, rest);
       const parts: HTMLElement[] = [text];
-      if (textRu) {
+      if (textRu && showRu) parts.push(el("p", { class: "line-ru", lang: "ru" }, textRu));
+      else if (textRu) {
         const translation = el("p", { class: "line-ru", lang: "ru", hidden: "" }, textRu);
         const toggle = el("button", { class: "link", type: "button", onclick: () => (translation.toggleAttribute("hidden"), toggle.remove()) }, "Перевод");
         parts.push(translation, toggle);
@@ -427,6 +428,33 @@ export async function playEpisode(root: HTMLElement, episode: Episode, d: Player
   await d.learner.episodeCompleted({ episodeId: episode.episode_id, moduleId: episode.module_id, firstTryRight: result.firstTry.right, tasks: result.firstTry.total, durationMs: result.durationMs });
   void d.learner.sync();
   return result;
+}
+
+/**
+ * The welcome scene of the first visit: the same stage as an episode, lines only, the translation
+ * always shown and {name} replaced with the student's name. "Пропустить" ends it at once; either
+ * way the student has seen the hotel's rules once. Resolves with how it ended.
+ */
+export async function playWelcome(root: HTMLElement, welcome: Welcome, d: PlayerDeps & { name: string }, time: TimeOfDay = "night"): Promise<"seen" | "skipped"> {
+  const place = d.content.places.find((p) => p.place_id === welcome.place_id) ?? d.content.places[0]!;
+  const characters = new Map(d.content.characters.map((c) => [c.character_id, residentSpeaker(c, time)]));
+  const stage = new Stage(root, place, welcome.title.ru, { "data-welcome": "" }, d, time);
+  const name = d.name.trim() || "гость";
+  const fill = (s: string) => s.replaceAll("{name}", name);
+  let skipped = false;
+  const skip = new Promise<void>((resolve) => {
+    stage.scene.append(el("button", { class: "link skip", type: "button", "data-skip": "", onclick: () => ((skipped = true), resolve()) }, "Пропустить"));
+  });
+  const ids = new Map(welcome.steps.map((s, i) => [s.id, i]));
+  for (let i = 0; i < welcome.steps.length && !skipped; ) {
+    const step = welcome.steps[i]!;
+    stage.scene.dataset.step = step.id;
+    if (step.kind === "end") break;
+    stage.show(step.speaker === "narrator" ? undefined : characters.get(step.speaker), step.emotion);
+    await Promise.race([stage.line(fill(step.text.en), fill(step.text.ru), true), skip]);
+    i = step.next !== undefined ? (ids.get(step.next) ?? welcome.steps.length) : i + 1;
+  }
+  return skipped ? "skipped" : "seen";
 }
 
 /** The place's art at that time of day, or a plain backdrop with its name until the illustrator's file is there. */

@@ -1,5 +1,5 @@
 import type { Character, ContentSource, Course, Episode, EpisodeStep, ErrorTaxonomy, KnownError, Module, Place, Task, TaskSet } from "../types.js";
-import { validateContent, type Issue, type ValidatedContent } from "../validate.js";
+import { validateContent, wordKey, type Issue, type ValidatedContent } from "../validate.js";
 import {
   CONCEPT_COLS,
   EMOTIONS,
@@ -21,6 +21,7 @@ import {
   TIMES,
   TRANSITIONS,
   UNIT_COLS,
+  WORD_COLS,
 } from "./format.js";
 import type { Workbook } from "./xlsx.js";
 
@@ -147,6 +148,11 @@ export function readSheet(book: Workbook, base: { taxonomy: ErrorTaxonomy; chara
   const episodes = table(book, SHEETS.episodes, [EPISODE_COLS.id, EPISODE_COLS.kind], knownIn(EPISODE_COLS), issues);
   const places = table(book, SHEETS.places, [PLACE_COLS.id, PLACE_COLS.nameEn, PLACE_COLS.nameRu, PLACE_COLS.unlockedBy], knownIn(PLACE_COLS), issues);
   if (!units || !concepts || !tasks || !episodes || !places) return { issues, locate };
+  // Words came later than the other sheets: a sheet without them still publishes, with a warning.
+  const hasWords = Object.keys(book).some((name) => key(name) === key(SHEETS.words));
+  const words = hasWords ? table(book, SHEETS.words, [WORD_COLS.unit, WORD_COLS.en, WORD_COLS.ru], knownIn(WORD_COLS), issues) : [];
+  if (!hasWords) warn(SHEETS.words, `в таблице нет листа «${SHEETS.words}»: у юнитов не будет слов для раздела «Мои слова»`);
+  if (!words) return { issues, locate };
 
   const modules = new Map<string, Module>();
   for (const row of units) {
@@ -206,6 +212,26 @@ export function readSheet(book: Workbook, base: { taxonomy: ErrorTaxonomy; chara
     const id = row.get(CONCEPT_COLS.id);
     const explanation = row.get(CONCEPT_COLS.explanation);
     m.concepts.push({ concept_id: id, label: row.get(CONCEPT_COLS.label), ...(explanation ? { explanation_ru: explanation } : {}) });
+  }
+
+  // ---------- Words
+  for (const row of words) {
+    const where = at(SHEETS.words, row);
+    const m = unitOf(where, row.get(WORD_COLS.unit));
+    if (!m) continue;
+    const en = row.get(WORD_COLS.en);
+    const ru = row.get(WORD_COLS.ru);
+    const example = row.get(WORD_COLS.example);
+    if (!en || !ru) {
+      err(where, "нужно слово по-английски и перевод");
+      continue;
+    }
+    const list = (m.words ??= []);
+    if (list.some((w) => wordKey(w.en) === wordKey(en))) {
+      err(where, `слово «${en}» в юните ${m.module_id} уже есть выше`);
+      continue;
+    }
+    list.push({ en, ru, ...(example ? { example } : {}) });
   }
 
   // ---------- Tasks

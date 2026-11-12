@@ -45,7 +45,7 @@
       "kind": "line",
       "speaker": "rocco",
       "emotion": "happy",
-      "text": { "en": "{player}. Lovely. I write it on your key.", "ru": "{player}. Прекрасно. Пишу на вашем ключе." },
+      "text": { "en": "{name}. Lovely. I write it on your key.", "ru": "{name}. Прекрасно. Пишу на вашем ключе." },
       "next": "room"
     },
     {

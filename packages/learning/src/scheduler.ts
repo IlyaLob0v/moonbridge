@@ -14,6 +14,8 @@ export interface SchedulerOptions {
   enableFuzz?: boolean;
   /** Optimized FSRS weights, once enough history exists; defaults otherwise. */
   w?: number[];
+  /** Minute-long learning steps for new cards (FSRS default). Off: every review schedules whole days. */
+  shortTerm?: boolean;
 }
 
 export interface ConceptReview {
@@ -38,6 +40,7 @@ export class ConceptScheduler {
       generatorParameters({
         request_retention: this.requestRetention,
         enable_fuzz: options.enableFuzz ?? true,
+        ...(options.shortTerm === false ? { enable_short_term: false } : {}),
         ...(options.w ? { w: options.w } : {}),
       }),
     );

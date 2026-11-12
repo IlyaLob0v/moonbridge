@@ -435,3 +435,29 @@ body[data-section="moonbridge"][data-time="day"] { --bg: #efe2c6; background: va
 @media (prefers-reduced-motion: reduce) {
   .building.state-current .building-art, .you-are-here, .building.just-opened .building-art, .building-panel { animation: none; }
 }
+
+/* Moonbridge: the welcome scene */
+.scene > .skip { position: absolute; top: max(6px, env(safe-area-inset-top)); right: 58px; z-index: 2; }
+.episode-end > button { margin: 6px 8px 0 0; }
+
+/* Moonbridge: «Мои слова» */
+.words, .word-review { margin: 16px; }
+.section-card.words-card, .words-card { border-color: #6f8a6a; }
+.word-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.word { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 8px 0; border-top: 1px solid rgba(93, 81, 112, 0.5); }
+.word:first-child { border-top: none; }
+.word-en { font-family: Georgia, serif; font-size: 17px; }
+.word-ru { grid-column: 1; color: var(--ink-dim); font-size: 14px; }
+.word-status { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--edge); color: var(--ink-dim); }
+.word.learned .word-status { color: var(--good); border-color: var(--good); }
+.word.learning .word-status { color: var(--warn); border-color: var(--warn); }
+.word-card { text-align: center; padding: 24px 16px; }
+.word-card .big { font-family: Georgia, serif; font-size: 28px; margin: 12px 0; }
+.word-card .word-en.big { color: var(--accent); }
+.word-card button.play { width: auto; min-height: 36px; padding: 4px 12px; vertical-align: middle; }
+.word-example { font-style: italic; color: var(--ink-dim); }
+.show-answer { margin-top: 12px; width: 100%; }
+.recall { display: flex; gap: 8px; margin-top: 16px; }
+.recall button { flex: 1; padding: 11px 6px; }
+.replay-welcome { display: inline-block; margin: 4px 0 12px; color: var(--ink-dim); }
+.scene[data-welcome] .scene-title { right: 120px; }

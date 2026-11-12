@@ -48,6 +48,8 @@ async function main(): Promise<void> {
     await page.getByRole("button", { name: "Войти" }).click();
     await page.getByRole("heading", { name: /Анна/ }).waitFor();
     check(await page.locator("[data-section=moonbridge]").isVisible(), "Today shows the Moonbridge card");
+    check(await page.locator("[data-first-visit]").isVisible(), "a new student is told to start in the hotel");
+    check((await page.locator(".today .card").first().getAttribute("data-section")) === "moonbridge", "the hotel card comes first for a new student");
     check(!chunks.some((c) => c.includes("section-")), "the platform has not downloaded the Moonbridge chunk");
     check(await noSideScroll(), "Today fits a 390 px screen");
     await page.screenshot({ path: `${ARTIFACTS}today.png` });
@@ -55,8 +57,40 @@ async function main(): Promise<void> {
     step("Into Moonbridge without signing in again");
     await page.locator("[data-section=moonbridge]").click();
     await page.waitForURL(`${WEB}/moonbridge`);
-    await page.locator(".hotel-map").waitFor();
+
+    step("The welcome scene of the first visit");
+    const welcome = page.locator(".scene[data-welcome]");
+    await welcome.waitFor();
     check(chunks.some((c) => c.includes("section-")), "the Moonbridge chunk loads on demand");
+    let lines = 0;
+    let named = false;
+    let bothLanguages = true;
+    while (await welcome.isVisible()) {
+      const text = await welcome.locator(".dialog").innerText();
+      named ||= /Анна/.test(text) && !/\{name\}/.test(text);
+      bothLanguages &&= (await welcome.locator(".dialog .line-ru:not([hidden])").count()) === 1;
+      if (lines === 1) await page.screenshot({ path: `${ARTIFACTS}welcome.png` });
+      check(await noSideScroll(), `welcome line ${lines + 1} fits a 390 px screen`);
+      const before = await welcome.getAttribute("data-step");
+      await welcome.locator(".dialog .next").click();
+      await page.waitForFunction((prev) => {
+        const step = document.querySelector(".scene[data-welcome]")?.getAttribute("data-step");
+        return step === undefined || (step !== prev && step !== "end");
+      }, before);
+      lines += 1;
+      if (lines > 20) throw new Error("the welcome does not end");
+    }
+    check(named, "Rocco greets the student by name");
+    check(bothLanguages, "every welcome line shows its translation at once");
+    const welcomeEnd = page.locator("[data-welcome-end]");
+    check(await welcomeEnd.locator(`[data-start="${EPISODE}"]`).isVisible(), "the welcome ends with the first episode");
+    await page.screenshot({ path: `${ARTIFACTS}welcome-end.png` });
+    await welcomeEnd.getByRole("button", { name: "Осмотреть отель" }).click();
+    await page.locator(".hotel-map").waitFor();
+    await page.reload();
+    await page.locator(".hotel-map").waitFor();
+    check(true, "the second visit opens on the map");
+    check(/после первого эпизода/.test(await page.locator("[data-words-card]").innerText()), "Мои слова are empty before the first episode");
     check(await page.getByLabel("Имя").count() === 0, "no second sign-in");
     check(await page.locator('.building.open[data-place="reception"]').isVisible(), "the reception's building is open on the town map");
     check(await page.locator('.building.locked[data-place="lift"]').isVisible(), "the lift's building waits for unit 2");
@@ -116,6 +150,37 @@ async function main(): Promise<void> {
     await new Promise((r) => setTimeout(r, 1500));
     check(accepted >= answered.size + 1, `the gateway accepted ${accepted} answer statements`);
     check(await page.locator('[data-shift-card="ready"]').isVisible(), "day 0 already offers a shift with the guest of the day");
+
+    step("Мои слова after the first episode");
+    const wordsCard = page.locator("[data-words-card]");
+    const waiting = Number(await wordsCard.getAttribute("data-words-card"));
+    check(waiting > 0, `the episode's words wait for review: ${waiting}`);
+    await wordsCard.click();
+    await page.locator(".words").waitFor();
+    check((await page.locator(".word[data-status=new]").count()) === Number(await page.locator(".words").getAttribute("data-words")), "every word starts as new");
+    check(await noSideScroll(), "the word list fits a 390 px screen");
+    await page.screenshot({ path: `${ARTIFACTS}words.png`, fullPage: true });
+    await page.locator("[data-review]").click();
+    const review = page.locator(".word-review");
+    await review.waitFor();
+    let cardNo = 0;
+    while (await review.isVisible()) {
+      await review.locator(".show-answer").click();
+      if (cardNo === 0) await page.screenshot({ path: `${ARTIFACTS}word-review.png` });
+      check(await noSideScroll(), `word card ${cardNo + 1} fits a 390 px screen`);
+      await review.locator(`[data-recall="${cardNo === 0 ? "forgot" : "remembered"}"]`).click();
+      await page.locator(".show-answer").or(page.locator("[data-review-end]")).first().waitFor();
+      cardNo += 1;
+      if (cardNo > 30) throw new Error("the review does not end");
+    }
+    check(cardNo === Math.min(waiting, 10) + 1, `the forgotten word came back once in the same review (${cardNo} cards)`);
+    await page.locator("[data-review-end]").waitFor();
+    await page.screenshot({ path: `${ARTIFACTS}review-end.png` });
+    await page.locator("[data-review-end]").getByRole("button", { name: "К словам" }).click();
+    await page.locator(".words").waitFor();
+    check((await page.locator(".word[data-status=learning]").count()) === Math.min(waiting, 10), "reviewed words are now being learned");
+    await page.goto(`${WEB}/moonbridge`);
+    await page.locator(".hotel-map").waitFor();
 
     step("Day 1, offline");
     await page.close();

@@ -22,6 +22,7 @@ import {
   TIMES,
   TRANSITIONS,
   UNIT_COLS,
+  WORD_COLS,
 } from "./format.js";
 import type { SheetLayout, Workbook } from "./xlsx.js";
 
@@ -56,7 +57,7 @@ function sheet(cols: string[], rows: string[][]): string[][] {
 }
 
 /**
- * The content as the teacher's sheet: one row per unit, concept, task, episode step and place, in
+ * The content as the teacher's sheet: one row per unit, concept, task, episode step, place and word, in
  * course order. Importing the result gives the same content back.
  */
 export function contentToSheet(content: ValidatedContent): { book: Workbook; layout: Record<string, SheetLayout> } {
@@ -86,6 +87,9 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
 
   const conceptCols = Object.values(CONCEPT_COLS);
   const concepts = modules.flatMap((m) => m.concepts.map((c) => [m.module_id, c.concept_id, c.label, c.explanation_ru ?? ""]));
+
+  const wordCols = Object.values(WORD_COLS);
+  const words = modules.flatMap((m) => (m.words ?? []).map((w) => [m.module_id, w.en, w.ru, w.example ?? ""]));
 
   const tasks = modules.flatMap((m) => {
     const set = content.taskSets.find((s) => s.module_id === m.module_id)?.tasks ?? [];
@@ -211,6 +215,7 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
     [SHEETS.tasks]: sheet(taskCols, taskRows),
     [SHEETS.episodes]: sheet(episodeCols, episodes),
     [SHEETS.places]: sheet(placeCols, places),
+    [SHEETS.words]: sheet(wordCols, words),
     [SHEETS.lists]: lists,
   };
   const layout: Record<string, SheetLayout> = {
@@ -241,6 +246,7 @@ export function contentToSheet(content: ValidatedContent): { book: Workbook; lay
       ],
     },
     [SHEETS.places]: { widths: [14, 18, 18, 26, 26, 26, 24, 24] },
+    [SHEETS.words]: { widths: [24, 26, 30, 50] },
     [SHEETS.lists]: { widths: [24, 40, 14, 12, 14, 14, 8, 12, 12] },
   };
   return { book, layout };

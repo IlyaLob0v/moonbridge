@@ -38,7 +38,7 @@ about 900 × 1200. The game moves the picture (steps in, hops, shudders), so no 
 - An episode with `"time_of_day": "day"` plays in daylight with the residents' day faces; the default is night.
 - `"side": true` makes it a side quest: listed on the map, but the unit and the homework do not wait for it.
 - A step `{ "kind": "scene", "place_id": "lift", "transition": "lift" }` moves the scene; transitions: `fade`, `lift`, `cut`.
-- A line may say `{player}`: the student's first name.
+- A line may say `{name}`: the student's first name.
 - `reactions` on a character: what they say after a right answer, a typo or a mistake.
 
 The hotel on the map follows the clock (day from 7:00 to 19:00); the ☀ / ☾ button switches it by hand.

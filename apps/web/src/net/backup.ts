@@ -2,7 +2,7 @@ import type { KeyValue } from "../storage/idb.js";
 import type { Api } from "./api.js";
 
 /** The keys whose values make up a player's game state on the server. */
-export const BACKED_UP_KEYS = ["profile", "moonbridge", "fsrs-cards", "repeats"] as const;
+export const BACKED_UP_KEYS = ["profile", "moonbridge", "fsrs-cards", "repeats", "moonbridge-words"] as const;
 const SAVED_AT = "backup-saved-at";
 const PUSHED_AT = "backup-pushed-at";
 
