@@ -324,7 +324,7 @@ async function main(): Promise<void> {
     await teacher.locator(".content-link a[href=\"/teacher/content\"]").click();
     await teacher.locator("[data-content-hash]").waitFor();
     const before = await teacher.locator("[data-content-hash]").getAttribute("data-content-hash");
-    check(/4 юнита, 45 заданий, 4 эпизода/.test(await teacher.locator("[data-content-hash]").innerText()), "the content page counts units 1–4");
+    check(/4 юнита, 45 заданий, 5 эпизодов/.test(await teacher.locator("[data-content-hash]").innerText()), "the content page counts units 1–4");
     const [sheetDownload] = await Promise.all([teacher.waitForEvent("download"), teacher.locator("[data-download-sheet]").click()]);
     check(sheetDownload.suggestedFilename() === "moonbridge-content.xlsx", "the teacher downloads the course as a sheet");
     const book = readXlsx(await readFile((await sheetDownload.path())!));

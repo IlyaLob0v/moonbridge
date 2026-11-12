@@ -18,6 +18,8 @@ import {
   STEP_KINDS,
   TASK_COLS,
   TASK_TYPES,
+  TIMES,
+  TRANSITIONS,
   UNIT_COLS,
 } from "./format.js";
 import type { Workbook } from "./xlsx.js";
@@ -342,7 +344,8 @@ export function readSheet(book: Workbook, base: { taxonomy: ErrorTaxonomy; chara
     placeList.push({
       place_id: id,
       name: { en: row.get(PLACE_COLS.nameEn), ru: row.get(PLACE_COLS.nameRu) },
-      background: row.get(PLACE_COLS.background) || `places/${id}.webp`,
+      background: row.get(PLACE_COLS.background) || `places/${id}.png`,
+      ...(row.get(PLACE_COLS.backgroundDay) ? { background_day: row.get(PLACE_COLS.backgroundDay) } : {}),
       unlocked_by: unlock && !["сразу", "-", "нет"].includes(key(unlock)) ? unlock : null,
       characters: residents,
     });
@@ -377,6 +380,12 @@ export function readSheet(book: Workbook, base: { taxonomy: ErrorTaxonomy; chara
     ep.module_id = m.module_id;
     ep.place_id = pick(EPISODE_COLS.place);
     ep.title = { en: pick(EPISODE_COLS.titleEn), ru: pick(EPISODE_COLS.titleRu) };
+    const timeCell = pick(EPISODE_COLS.time);
+    const time = timeCell ? lookup(TIMES, timeCell) : undefined;
+    if (timeCell && !time) err(where, `время суток «${timeCell}» не знакомо, нужно: ${TIMES.map(([, l]) => l).join(" или ")}`);
+    if (time) ep.time_of_day = time;
+    const side = yes(pick(EPISODE_COLS.side));
+    if (side !== undefined) ep.side = side;
     if (!ep.place_id) err(where, `у эпизода ${ep.episode_id} не указано место`);
     if (!ep.title.en || !ep.title.ru) err(where, `у эпизода ${ep.episode_id} нужно название на обоих языках`);
     if (!/^[A-Za-z0-9_]+$/.test(ep.episode_id)) err(where, `id эпизода «${ep.episode_id}» — только латиница, цифры и _`);
@@ -389,7 +398,7 @@ export function readSheet(book: Workbook, base: { taxonomy: ErrorTaxonomy; chara
       const kindCell = row.get(EPISODE_COLS.kind);
       const kind = kindCell ? lookup(STEP_KINDS, kindCell) : row.get(EPISODE_COLS.task) ? "task" : row.get(EPISODE_COLS.textEn) ? "line" : undefined;
       if (!kind) {
-        err(rowWhere, kindCell ? `«${kindCell}» не знаком, нужно: реплика, задание или конец` : "непонятно, что это за шаг: заполните «что»");
+        err(rowWhere, kindCell ? `«${kindCell}» не знаком, нужно: ${STEP_KINDS.map(([, l]) => l).join(", ")}` : "непонятно, что это за шаг: заполните «что»");
         return;
       }
       const speakerCell = row.get(EPISODE_COLS.speaker);
@@ -401,6 +410,14 @@ export function readSheet(book: Workbook, base: { taxonomy: ErrorTaxonomy; chara
       const opt = (col: string) => row.get(col) || undefined;
       let step: EpisodeStep;
       if (kind === "end") step = { id, kind };
+      else if (kind === "scene") {
+        const to = row.get(EPISODE_COLS.to);
+        if (!to) err(rowWhere, "у смены места не указано, куда (колонка «куда»)");
+        const transitionCell = row.get(EPISODE_COLS.transition);
+        const transition = transitionCell ? lookup(TRANSITIONS, transitionCell) : undefined;
+        if (transitionCell && !transition) err(rowWhere, `переход «${transitionCell}» не знаком, нужно: ${TRANSITIONS.map(([, l]) => l).join(", ")}`);
+        step = { id, kind, place_id: to, ...(transition ? { transition } : {}), ...(opt(EPISODE_COLS.next) ? { next: opt(EPISODE_COLS.next)! } : {}) };
+      }
       else if (kind === "line") {
         if (!speaker) err(rowWhere, "у реплики не указано, кто говорит");
         if (!row.get(EPISODE_COLS.textEn)) err(rowWhere, "у реплики нет текста EN");
@@ -428,7 +445,9 @@ export function readSheet(book: Workbook, base: { taxonomy: ErrorTaxonomy; chara
       }
       ep.steps.push(step);
     });
-    episodeList.push(ep);
+    // Steps last, as in the hand-written files.
+    const { steps, ...head } = ep;
+    episodeList.push({ ...head, steps });
   }
 
   if (issues.some((i) => i.severity === "error")) return { issues, locate };

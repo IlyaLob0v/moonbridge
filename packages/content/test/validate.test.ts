@@ -226,6 +226,37 @@ describe("Moonbridge checks", () => {
     expect(result.issues.map((i) => i.code)).toContain("speaker.elsewhere");
   });
 
+  it("a scene step to a missing place, or to one that opens after the episode's unit", async () => {
+    const src = await fixture();
+    const steps = episode(src, "to_be_at_reception").steps;
+    steps.splice(3, 0, { id: "walk", kind: "scene", place_id: "garden", transition: "lift" });
+    steps[2].next = "walk";
+    steps[3].next = "end";
+    expect(codes(src)).toContain("ref.place");
+    steps[3].place_id = "cafe"; // the café opens with a later unit
+    expect(codes(src)).toEqual(["order.place"]);
+    steps[3].place_id = "reception";
+    expect(codes(src)).toEqual([]);
+  });
+
+  it("a placeholder other than {player} in a line", async () => {
+    const src = await fixture();
+    const hello = episode(src, "to_be_at_reception").steps[0];
+    hello.text.en = "Welcome, {player}!";
+    expect(codes(src)).toEqual([]);
+    hello.text.en = "Welcome, {name}!";
+    expect(codes(src)).toEqual(["text.placeholder"]);
+  });
+
+  it("a day episode checks the emotion against the day portraits", async () => {
+    const src = await fixture();
+    const rocco = (src.characters![0]!.data as any).characters[0];
+    rocco.day = { species: { en: "man", ru: "человек" }, portraits: { neutral: "characters/rocco/day-neutral.png" } };
+    expect(codes(src)).toEqual([]);
+    episode(src, "to_be_at_reception").time_of_day = "day"; // "hello" is happy, and the man has no happy face
+    expect(codes(src)).toEqual(["ref.emotion"]);
+  });
+
   it("one unit opening two places", async () => {
     const src = await fixture();
     (src.places![0]!.data as any).places[0].unlocked_by = "A1_PastSimple_01";

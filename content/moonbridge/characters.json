@@ -8,9 +8,23 @@
       "species": { "en": "werewolf", "ru": "оборотень" },
       "role": { "en": "night porter", "ru": "ночной портье" },
       "portraits": {
-        "neutral": "characters/rocco/neutral.webp",
-        "happy": "characters/rocco/happy.webp",
-        "upset": "characters/rocco/upset.webp"
+        "neutral": "characters/rocco/neutral.png",
+        "happy": "characters/rocco/happy.png",
+        "upset": "characters/rocco/upset.png"
+      },
+      "day": {
+        "species": { "en": "man", "ru": "человек" },
+        "role": { "en": "day porter", "ru": "дневной портье" },
+        "portraits": {
+          "neutral": "characters/rocco/day-neutral.png",
+          "happy": "characters/rocco/day-happy.png",
+          "upset": "characters/rocco/day-upset.png"
+        }
+      },
+      "reactions": {
+        "right": [{ "en": "Exactly!", "ru": "Точно!" }, { "en": "Good. Very good.", "ru": "Хорошо. Очень хорошо." }, { "en": "You're a natural.", "ru": "У вас талант." }],
+        "typo": [{ "en": "Almost! One little letter.", "ru": "Почти! Одна буковка." }, { "en": "Close. My ears forgive you.", "ru": "Близко. Мои уши вас прощают." }],
+        "wrong": [{ "en": "Hmm. Not quite.", "ru": "Хм. Не совсем." }, { "en": "Grr... no. Look here.", "ru": "Ррр... нет. Смотрите." }, { "en": "Not like that, my friend.", "ru": "Не так, друг мой." }]
       }
     },
     {
@@ -19,9 +33,23 @@
       "species": { "en": "gargoyle", "ru": "горгулья" },
       "role": { "en": "lift operator", "ru": "лифтёр" },
       "portraits": {
-        "neutral": "characters/lev/neutral.webp",
-        "happy": "characters/lev/happy.webp",
-        "upset": "characters/lev/upset.webp"
+        "neutral": "characters/lev/neutral.png",
+        "happy": "characters/lev/happy.png",
+        "upset": "characters/lev/upset.png"
+      },
+      "day": {
+        "species": { "en": "man", "ru": "человек" },
+        "role": { "en": "lift operator", "ru": "лифтёр" },
+        "portraits": {
+          "neutral": "characters/lev/day-neutral.png",
+          "happy": "characters/lev/day-happy.png",
+          "upset": "characters/lev/day-upset.png"
+        }
+      },
+      "reactions": {
+        "right": [{ "en": "Correct. Going up.", "ru": "Верно. Едем выше." }, { "en": "Perfect. Like Paris in 1650.", "ru": "Идеально. Как Париж в 1650-м." }],
+        "typo": [{ "en": "A small crack. It happens to stone too.", "ru": "Маленькая трещинка. С камнем тоже бывает." }],
+        "wrong": [{ "en": "No. Three hundred years, and still no.", "ru": "Нет. Триста лет, и всё ещё нет." }, { "en": "Wrong floor. Let's look again.", "ru": "Не тот этаж. Посмотрим ещё раз." }]
       }
     },
     {
@@ -30,9 +58,23 @@
       "species": { "en": "fairy", "ru": "фея" },
       "role": { "en": "barista at the Night Café", "ru": "бариста в Night Café" },
       "portraits": {
-        "neutral": "characters/pip/neutral.webp",
-        "happy": "characters/pip/happy.webp",
-        "upset": "characters/pip/upset.webp"
+        "neutral": "characters/pip/neutral.png",
+        "happy": "characters/pip/happy.png",
+        "upset": "characters/pip/upset.png"
+      },
+      "day": {
+        "species": { "en": "girl", "ru": "девушка" },
+        "role": { "en": "barista at the Night Café", "ru": "бариста в Night Café" },
+        "portraits": {
+          "neutral": "characters/pip/day-neutral.png",
+          "happy": "characters/pip/day-happy.png",
+          "upset": "characters/pip/day-upset.png"
+        }
+      },
+      "reactions": {
+        "right": [{ "en": "Yes, yes, yes!", "ru": "Да, да, да!" }, { "en": "Sweet! Like moon tea.", "ru": "Сладко! Как лунный чай." }],
+        "typo": [{ "en": "Oops, a typo! Sugar in the wrong cup.", "ru": "Ой, опечатка! Сахар не в ту чашку." }],
+        "wrong": [{ "en": "Oh no, no, no.", "ru": "Ой, нет-нет-нет." }, { "en": "Hmm, that's a frog answer.", "ru": "Хм, это ответ лягушки." }]
       }
     },
     {
@@ -41,9 +83,14 @@
       "species": { "en": "ghost", "ru": "призрак" },
       "role": { "en": "radio DJ", "ru": "диджей радио" },
       "portraits": {
-        "neutral": "characters/kai/neutral.webp",
-        "happy": "characters/kai/happy.webp",
-        "upset": "characters/kai/upset.webp"
+        "neutral": "characters/kai/neutral.png",
+        "happy": "characters/kai/happy.png",
+        "upset": "characters/kai/upset.png"
+      },
+      "reactions": {
+        "right": [{ "en": "Loud and clear!", "ru": "Слышу чётко и ясно!" }, { "en": "Ten out of ten, Moonbridge!", "ru": "Десять из десяти, Moonbridge!" }],
+        "typo": [{ "en": "A little static there. Almost!", "ru": "Немного помех. Почти!" }],
+        "wrong": [{ "en": "Static... static... Not that.", "ru": "Помехи... помехи... Не то." }, { "en": "Wrong frequency, friend.", "ru": "Не та частота, друг." }]
       }
     }
   ]

@@ -1,6 +1,6 @@
 import type { ContentBundle, Course } from "@moonbridge/content";
 import { beforeAll, describe, expect, it } from "vitest";
-import { completeEpisode, emptyState, hotelView, migrateState, openedUnits } from "../src/moonbridge/progress.js";
+import { completeEpisode, emptyState, hotelTime, hotelView, migrateState, openedUnits } from "../src/moonbridge/progress.js";
 import { loadBundle } from "./fixtures.js";
 
 let bundle: ContentBundle;
@@ -66,6 +66,33 @@ describe("hotelView when the teacher opens the units", () => {
     expect(openedUnits({ groups: [{ unit_access: "assigned" }, { unit_access: "course" }], homework: hw })).toBeUndefined();
     expect(openedUnits({ groups: [], homework: [] })).toBeUndefined();
     expect(openedUnits(undefined)).toBeUndefined();
+  });
+});
+
+describe("side quests and the time of day", () => {
+  it("lists a side quest in its place, but the unit and the Play button do not wait for it", () => {
+    const side = { ...bundle.moonbridge!.episodes.find((e) => e.episode_id === "to_be_at_reception")!, episode_id: "morning_side", side: true, time_of_day: "day" as const };
+    const content = { ...bundle.moonbridge!, episodes: [...bundle.moonbridge!.episodes, side] };
+    const v = hotelView(content, course, completeEpisode(emptyState(), "to_be_at_reception"));
+    expect(v.places[0]!.episodes.map((e) => e.episode.episode_id)).toEqual(["to_be_at_reception", "morning_side"]);
+    expect(open(v)).toEqual(["reception", "cafe"]);
+    expect(v.next?.episode_id).toBe("articles_in_cafe");
+  });
+
+  it("follows the clock unless the student chose a time on the map", () => {
+    const at = (h: number) => new Date(2026, 10, 12, h, 30);
+    expect(hotelTime(emptyState(), at(6))).toBe("night");
+    expect(hotelTime(emptyState(), at(7))).toBe("day");
+    expect(hotelTime(emptyState(), at(18))).toBe("day");
+    expect(hotelTime(emptyState(), at(19))).toBe("night");
+    expect(hotelTime({ ...emptyState(), time: "night" }, at(12))).toBe("night");
+  });
+
+  it("keeps the chosen time and the places seen open, and drops anything else there", () => {
+    const s = migrateState({ ...emptyState(), time: "day", seen_places: ["reception", 7] });
+    expect(s.time).toBe("day");
+    expect(s.seen_places).toEqual(["reception"]);
+    expect(migrateState({ ...emptyState(), time: "noon" }).time).toBeUndefined();
   });
 });
 

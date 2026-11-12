@@ -70,6 +70,16 @@
         "ru": "Пятнадцать монет. Или одна хорошая история. Приходите завтра!"
       }
     },
+    { "id": "home", "kind": "scene", "place_id": "lift", "transition": "fade" },
+    {
+      "id": "lev_smells",
+      "kind": "line",
+      "speaker": "lev",
+      "text": {
+        "en": "Thirteenth floor? I can smell Pip's pie. Don't tell her, but it is the best in Europe.",
+        "ru": "Тринадцатый этаж? Чувствую пирог от Пип. Не говорите ей, но он лучший в Европе."
+      }
+    },
     { "id": "end", "kind": "end" }
   ]
 }

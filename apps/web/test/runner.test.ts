@@ -34,6 +34,18 @@ describe("EpisodeRunner", () => {
     expect(r.results.get("ask")).toBe(true);
   });
 
+  it("moves on from a scene step like from a line", () => {
+    const base = episode("to_be_at_reception");
+    const steps = [...base.steps];
+    steps.splice(1, 0, { id: "walk", kind: "scene", place_id: "reception", transition: "fade" });
+    const r = new EpisodeRunner({ ...base, steps });
+    r.next();
+    expect(r.current.id).toBe("walk");
+    r.next();
+    expect(r.current.id).toBe("ask");
+    expect(() => r.next()).toThrow(/not a line or a scene/);
+  });
+
   it("follows a branch added in the content alone", () => {
     const base = episode("to_be_at_reception");
     const edited: Episode = {

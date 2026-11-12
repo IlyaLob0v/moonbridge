@@ -1,8 +1,7 @@
-import type { GuestTemplate, MoonbridgeContent } from "@moonbridge/content";
-import type { Learner } from "../core/learner.js";
+import type { GuestTemplate, TimeOfDay } from "@moonbridge/content";
 import { el } from "../ui/dom.js";
 import type { ShiftPlan } from "./daily.js";
-import { residentSpeaker, Stage, type Speaker } from "./player.js";
+import { residentSpeaker, Stage, type PlayerDeps, type Speaker } from "./player.js";
 
 export interface ShiftResult {
   returned: number;
@@ -20,12 +19,13 @@ function guestSpeaker(g: GuestTemplate): Speaker {
  * owner when the student answers right; a wrong answer keeps it until the error's next day),
  * then the guest of the day. Lines come from content; the narration here is interface text.
  */
-export async function playShift(root: HTMLElement, plan: ShiftPlan, d: { content: MoonbridgeContent; learner: Learner; mediaBase: string }): Promise<ShiftResult> {
+export async function playShift(root: HTMLElement, plan: ShiftPlan, d: PlayerDeps & { time?: TimeOfDay }): Promise<ShiftResult> {
+  const time = d.time ?? "night";
   const place = d.content.places.find((p) => p.unlocked_by === null) ?? d.content.places[0]!;
-  const residents = new Map(d.content.characters.map((c) => [c.character_id, residentSpeaker(c)]));
+  const residents = new Map(d.content.characters.map((c) => [c.character_id, residentSpeaker(c, time)]));
   const host = residents.get(plan.guest?.template.host ?? place.characters[0] ?? "") ?? residents.get(place.characters[0] ?? "");
   d.learner.resetAttempts();
-  const stage = new Stage(root, place, "Смена в отеле", { "data-shift": String(plan.day) }, d);
+  const stage = new Stage(root, place, time === "day" ? "Дневная смена" : "Ночная смена", { "data-shift": String(plan.day) }, d, time);
   const result: ShiftResult = { returned: 0, items: plan.lostAndFound.length, guestRight: 0, guestTotal: 0 };
 
   stage.scene.dataset.step = "welcome";
@@ -58,6 +58,7 @@ export async function playShift(root: HTMLElement, plan: ShiftPlan, d: { content
     const guest = guestSpeaker(g);
     stage.scene.dataset.step = "guest";
     stage.scene.dataset.guest = g.guest_id;
+    d.sound?.play("bell");
     stage.show(guest);
     await stage.line(g.arrival.en, g.arrival.ru);
     for (const [n, task] of plan.guest.tasks.entries()) {

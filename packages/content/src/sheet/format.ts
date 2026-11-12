@@ -1,4 +1,4 @@
-import type { Character, Emotion, ErrorTaxonomy, Module, TaskType } from "../types.js";
+import type { Character, Emotion, ErrorTaxonomy, Module, SceneTransition, TaskType, TimeOfDay } from "../types.js";
 
 // The content sheet's vocabulary: sheet names, column headers and the Russian words the teacher
 // types for enum values. The importer and the exporter share it, so a downloaded sheet always
@@ -68,6 +68,8 @@ export const EPISODE_COLS = {
   place: "место",
   titleEn: "название EN",
   titleRu: "название RU",
+  time: "время суток",
+  side: "побочный",
   step: "шаг",
   kind: "что",
   speaker: "кто",
@@ -78,6 +80,8 @@ export const EPISODE_COLS = {
   next: "дальше",
   onCorrect: "если верно",
   onWrong: "если неверно",
+  to: "куда",
+  transition: "переход",
 } as const;
 
 export const PLACE_COLS = {
@@ -85,6 +89,7 @@ export const PLACE_COLS = {
   nameEn: "название EN",
   nameRu: "название RU",
   background: "фон",
+  backgroundDay: "фон днём",
   unlockedBy: "открывает юнит",
   characters: "жители",
 } as const;
@@ -105,10 +110,20 @@ export const SKILLS: [Module["skill"], string][] = [
   ["reading", "чтение"],
   ["listening", "аудирование"],
 ];
-export const STEP_KINDS: ["line" | "task" | "end", string][] = [
+export const STEP_KINDS: ["line" | "task" | "scene" | "end", string][] = [
   ["line", "реплика"],
   ["task", "задание"],
+  ["scene", "смена места"],
   ["end", "конец"],
+];
+export const TIMES: [TimeOfDay, string][] = [
+  ["night", "ночь"],
+  ["day", "день"],
+];
+export const TRANSITIONS: [SceneTransition, string][] = [
+  ["fade", "затемнение"],
+  ["lift", "лифт"],
+  ["cut", "сразу"],
 ];
 export const EMOTIONS: [Emotion, string][] = [
   ["neutral", "спокойно"],
@@ -169,6 +184,8 @@ export const HELP: string[] = [
   "Ошибки: в «ошибка 1» — неверные ответы через |, в «тип ошибки 1» — тип из справочника, в «пояснение 1» — что увидит ученик. Если нужно больше трёх ошибок, добавьте колонки «ошибка 5», «тип ошибки 5», «пояснение 5».",
   "",
   "Эпизоды. Одна строка — один шаг: реплика, задание или конец. Если «эпизод» пустой, строка относится к эпизоду выше. Юнит, место и название достаточно указать в первой строке эпизода.",
+  "Смена места: в «что» напишите «смена места», в «куда» — место, в «переход» — затемнение, лифт или сразу. В репликах можно писать {player}: подставится имя ученика.",
+  "Время суток эпизода (ночь или день) и «побочный» (да — дополнительный эпизод, без него юнит считается пройденным) достаточно указать в первой строке.",
   "Шаги идут по порядку. Чтобы сделать ветку, дайте шагу имя в колонке «шаг» и укажите его в «если неверно», «если верно» или «дальше».",
   "",
   "Как опубликовать: в Google Таблицах «Настройки доступа → Все, у кого есть ссылка (читатель)», затем в кабинете преподавателя «Контент курса» вставьте ссылку и нажмите «Проверить». Если ошибок нет, нажмите «Опубликовать» — ученики увидят новое при следующем открытии.",

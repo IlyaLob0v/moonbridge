@@ -21,14 +21,26 @@
           "name": { "type": "string", "minLength": 1 },
           "species": { "$ref": "#/$defs/localized" },
           "role": { "$ref": "#/$defs/localized" },
-          "portraits": {
+          "portraits": { "$ref": "#/$defs/portraits" },
+          "day": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["neutral"],
+            "required": ["species", "portraits"],
+            "description": "Who the character is by day (Rocco: a werewolf at night, a man by day). Without it the character looks the same day and night.",
             "properties": {
-              "neutral": { "$ref": "#/$defs/art" },
-              "happy": { "$ref": "#/$defs/art" },
-              "upset": { "$ref": "#/$defs/art" }
+              "species": { "$ref": "#/$defs/localized" },
+              "role": { "$ref": "#/$defs/localized" },
+              "portraits": { "$ref": "#/$defs/portraits" }
+            }
+          },
+          "reactions": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "What the character says after an answer; one is picked at random.",
+            "properties": {
+              "right": { "type": "array", "items": { "$ref": "#/$defs/say" } },
+              "typo": { "type": "array", "items": { "$ref": "#/$defs/say" } },
+              "wrong": { "type": "array", "items": { "$ref": "#/$defs/say" } }
             }
           }
         }
@@ -37,6 +49,22 @@
   },
   "$defs": {
     "art": { "type": "string", "pattern": "^[a-z0-9_/.-]+$" },
+    "portraits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["neutral"],
+      "properties": {
+        "neutral": { "$ref": "#/$defs/art" },
+        "happy": { "$ref": "#/$defs/art" },
+        "upset": { "$ref": "#/$defs/art" }
+      }
+    },
+    "say": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["en"],
+      "properties": { "en": { "type": "string", "minLength": 1 }, "ru": { "type": "string", "minLength": 1 } }
+    },
     "localized": {
       "type": "object",
       "additionalProperties": false,

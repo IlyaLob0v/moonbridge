@@ -1,4 +1,4 @@
-import type { ContentBundle, Course, Episode, MoonbridgeContent, Place } from "@moonbridge/content";
+import type { ContentBundle, Course, Episode, MoonbridgeContent, Place, TimeOfDay } from "@moonbridge/content";
 
 /** What Moonbridge keeps for a student. Answers and errors live in the shared journal, not here. */
 export interface MoonbridgeState {
@@ -8,10 +8,21 @@ export interface MoonbridgeState {
   practice_days: number[];
   /** School days whose daily shift is finished. */
   shift_days: number[];
+  /** Places whose opening the student has seen on the map; undefined until the map first shows. */
+  seen_places?: string[];
+  /** Day or night chosen on the map; undefined = by the clock. */
+  time?: TimeOfDay;
 }
 
 export function emptyState(): MoonbridgeState {
   return { version: 1, completed_episodes: [], practice_days: [], shift_days: [] };
+}
+
+/** The hotel's time of day: what the student chose on the map, or the clock (day from 7:00 to 19:00). */
+export function hotelTime(state: MoonbridgeState, now: Date): TimeOfDay {
+  if (state.time) return state.time;
+  const h = now.getHours();
+  return h >= 7 && h < 19 ? "day" : "night";
 }
 
 const numbers = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => Number.isInteger(x)) : []);
@@ -25,6 +36,8 @@ export function migrateState(raw: unknown): MoonbridgeState {
     completed_episodes: r.completed_episodes.filter((e) => typeof e === "string"),
     practice_days: numbers(r.practice_days),
     shift_days: numbers(r.shift_days),
+    ...(Array.isArray(r.seen_places) ? { seen_places: r.seen_places.filter((p) => typeof p === "string") } : {}),
+    ...(r.time === "day" || r.time === "night" ? { time: r.time } : {}),
   };
 }
 
@@ -81,7 +94,9 @@ export interface HotelView {
 export function hotelView(content: MoonbridgeContent, course: Course, state: MoonbridgeState, opened?: Set<string>): HotelView {
   const done = new Set(state.completed_episodes);
   const position = new Map(course.units.map((u, i) => [u, i]));
-  const inCourse = content.episodes.filter((e) => position.has(e.module_id));
+  const listed = content.episodes.filter((e) => position.has(e.module_id));
+  // Side quests show on the map but nothing waits for them.
+  const inCourse = listed.filter((e) => !e.side);
   const pending = inCourse.filter((e) => !done.has(e.episode_id)).map((e) => position.get(e.module_id)!);
   const currentPos = pending.length ? Math.min(...pending) : course.units.length;
   const unitPlayed = (unit: string) => inCourse.some((e) => e.module_id === unit) && inCourse.every((e) => e.module_id !== unit || done.has(e.episode_id));
@@ -94,7 +109,7 @@ export function hotelView(content: MoonbridgeContent, course: Course, state: Moo
   // Map order: open-from-the-start places first, then in the order the course opens them.
   const opensAt = (p: Place) => (p.unlocked_by === null ? -1 : (position.get(p.unlocked_by) ?? Number.MAX_SAFE_INTEGER));
   const places = [...content.places].sort((a, b) => opensAt(a) - opensAt(b)).map((place) => {
-    const episodes = inCourse
+    const episodes = listed
       .filter((e) => e.place_id === place.place_id)
       .sort((a, b) => position.get(a.module_id)! - position.get(b.module_id)!)
       .map((episode) => ({ episode, done: done.has(episode.episode_id), available: reached(episode.module_id) }));
@@ -103,7 +118,7 @@ export function hotelView(content: MoonbridgeContent, course: Course, state: Moo
   const next = places
     .filter((p) => p.open)
     .flatMap((p) => p.episodes)
-    .filter((e) => e.available && !e.done)
+    .filter((e) => e.available && !e.done && !e.episode.side)
     .sort((a, b) => position.get(a.episode.module_id)! - position.get(b.episode.module_id)!)[0]?.episode;
   if (opened) {
     const current = course.units.find((u) => reached(u) && inCourse.some((e) => e.module_id === u && !done.has(e.episode_id)));

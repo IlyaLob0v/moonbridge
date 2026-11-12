@@ -30,10 +30,10 @@ export class EpisodeRunner {
     return this.current.kind === "end";
   }
 
-  /** After a line. */
+  /** After a line, or once the stage has moved to a scene step's place. */
   next(): EpisodeStep {
     const step = this.current;
-    if (step.kind !== "line") throw new Error(`step "${step.id}" is a ${step.kind}, not a line`);
+    if (step.kind !== "line" && step.kind !== "scene") throw new Error(`step "${step.id}" is a ${step.kind}, not a line or a scene`);
     return this.go(step.next);
   }
 

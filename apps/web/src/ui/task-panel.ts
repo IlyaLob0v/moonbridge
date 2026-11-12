@@ -135,12 +135,22 @@ export function askTask(root: HTMLElement, task: Task, o: AskOptions = {}): Prom
   });
 }
 
-/** What happened, with the author's feedback; resolves when the student continues. */
-export function showFeedback(root: HTMLElement, outcome: CheckOutcome, errorLabel?: string, task?: Task): Promise<void> {
+/**
+ * What happened, with the author's feedback; resolves when the student continues. With `voice`,
+ * the character who asked says it: their words lead, the verdict becomes a small tag.
+ */
+export function showFeedback(root: HTMLElement, outcome: CheckOutcome, errorLabel?: string, task?: Task, voice?: { en: string; ru?: string }): Promise<void> {
   return new Promise((resolve) => {
     const kind = outcome.match === "typo" ? "typo" : outcome.correct ? "right" : "wrong";
-    const box = el("div", { class: `feedback ${kind}`, "data-outcome": kind });
-    box.append(el("div", { class: "feedback-title" }, kind === "right" ? "Верно!" : kind === "typo" ? "Почти: опечатка" : "Не совсем"));
+    const verdict = kind === "right" ? "Верно!" : kind === "typo" ? "Почти: опечатка" : "Не совсем";
+    const box = el("div", { class: `feedback ${kind}${voice ? " voiced" : ""}`, "data-outcome": kind });
+    if (voice) {
+      box.append(
+        el("div", { class: "feedback-verdict" }, verdict),
+        el("div", { class: "feedback-title feedback-voice", lang: "en" }, voice.en),
+        ...(voice.ru ? [el("div", { class: "feedback-voice-ru muted", lang: "ru" }, voice.ru)] : []),
+      );
+    } else box.append(el("div", { class: "feedback-title" }, verdict));
     if (kind !== "right") {
       box.append(
         el("div", {}, "Ваш ответ: ", el("span", { class: kind === "typo" ? "typo" : "wrong", lang: "en" }, (task ? displayResponse(task, outcome.response) : outcome.response) || "—")),
