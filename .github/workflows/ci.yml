@@ -22,8 +22,8 @@ jobs:
         run: pnpm content:validate
       - name: Build content bundle
         run: pnpm content:bundle
-      - name: Test
-        run: pnpm test
+      - name: Test, with the coverage floor
+        run: pnpm test:coverage
       - name: Build the platform
         run: pnpm build:web
       - name: Browser for Playwright
@@ -43,3 +43,11 @@ jobs:
         with:
           name: e2e-screenshots
           path: e2e/.artifacts/
+
+  # The stand's Docker images on a clean machine: Postgres, the gateway in production mode, Caddy.
+  stand:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the images and check them together
+        run: sh scripts/stand-smoke.sh

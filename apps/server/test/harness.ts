@@ -69,7 +69,8 @@ export interface HarnessStores {
   fetchSheet?: AppDeps["fetchSheet"];
 }
 
-export async function harness(stores: HarnessStores = {}): Promise<Harness> {
+/** `keepOpen`: the app outlives a single test (one fixture for many tests); the caller closes it. */
+export async function harness(stores: HarnessStores = {}, { keepOpen = false } = {}): Promise<Harness> {
   const config = loadConfig({ NODE_ENV: "test", CONTENT_DIR, ADMIN_TOKEN: "admin-secret", PUBLIC_URL: "https://moonbridge.test", CLIENT_URL: "https://app.moonbridge.test/" });
   const sent: Statement[] = [];
   const outbox = new Outbox(stores.outboxStore ?? new MemoryOutboxStore(), { send: async (b) => (sent.push(...b), { kind: "sent", ids: b.map((s) => s.id) }) });
@@ -100,7 +101,7 @@ export async function harness(stores: HarnessStores = {}): Promise<Harness> {
     ...(stores.content ? { content: stores.content } : {}),
     ...(stores.fetchSheet ? { fetchSheet: stores.fetchSheet } : {}),
   });
-  current = app;
+  if (!keepOpen) current = app;
   return { app, sent, agsCalls, outbox, grades, lms };
 }
 
