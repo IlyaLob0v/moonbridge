@@ -76,6 +76,18 @@ export function stopServers(): void {
   for (const c of children) if (c.pid) process.kill(-c.pid, "SIGTERM");
 }
 
+/** The hotel's map. A student's first visit opens on the welcome scene instead: skipped here. */
+export async function hotelMap(page: Page): Promise<void> {
+  const map = page.locator(".hotel-map");
+  const welcome = page.locator(".scene[data-welcome]");
+  await map.or(welcome).first().waitFor();
+  if (await welcome.isVisible()) {
+    await welcome.locator("[data-skip]").click();
+    await page.locator("[data-welcome-end]").getByRole("button", { name: "Осмотреть отель" }).click();
+    await map.waitFor();
+  }
+}
+
 export const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 
 /** Plays an episode from wherever it stands to its end, answering every task right. Returns the task steps answered. */

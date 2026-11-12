@@ -213,3 +213,32 @@ describe("the content sheet", () => {
     expect(JSON.parse(prettyJson(value, 10))).toEqual(value);
   });
 });
+
+describe("the words sheet", () => {
+  it("reads a new word with its example into its unit", async () => {
+    const { source, book } = await sheetOf(CONTENT_DIR);
+    book[SHEETS.words]!.push(["A1_NightCafe_04", "a glass of water", "стакан воды", "Can I have a glass of water, please?"]);
+    const result = checkSheet(book, source);
+    expect(errors(result)).toEqual([]);
+    const words = result.content!.modules.find((m) => m.module_id === "A1_NightCafe_04")!.words!;
+    expect(words.at(-1)).toEqual({ en: "a glass of water", ru: "стакан воды", example: "Can I have a glass of water, please?" });
+  });
+
+  it("says which row repeats a word or misses a translation", async () => {
+    const { source, book } = await sheetOf(CONTENT_DIR);
+    const first = book[SHEETS.words]![1]!;
+    book[SHEETS.words]!.push([first[0]!, first[1]!.toUpperCase(), "дубль"], ["A1_NightCafe_04", "napkin", ""]);
+    const rows = book[SHEETS.words]!.length;
+    const messages = errors(checkSheet(book, source)).map((i) => `${i.where}: ${i.message}`);
+    expect(messages).toEqual(expect.arrayContaining([expect.stringMatching(new RegExp(`строка ${rows - 1}: слово .* уже есть выше`)), `${SHEETS.words}, строка ${rows}: нужно слово по-английски и перевод`]));
+  });
+
+  it("publishes an older sheet without the words sheet, with a warning", async () => {
+    const { source, book } = await sheetOf(CONTENT_DIR);
+    delete book[SHEETS.words];
+    const result = checkSheet(book, source);
+    expect(result.ok).toBe(true);
+    expect(result.issues).toContainEqual(expect.objectContaining({ severity: "warning", where: SHEETS.words }));
+    expect(result.content!.modules.every((m) => m.words === undefined)).toBe(true);
+  });
+});

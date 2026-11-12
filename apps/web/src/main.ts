@@ -174,7 +174,7 @@ async function boot(): Promise<void> {
       const { mountMoonbridge } = await import("./moonbridge/section.js");
       cacheLoadedAssets();
       const board = await dashboard();
-      return mountMoonbridge(root, path, { learner, kv, mediaBase, navigate, ...(board ? { board } : {}), ...(session.kind === "account" ? { feedback } : {}) });
+      return mountMoonbridge(root, path, { learner, kv, mediaBase, navigate, playerName: profile.name, ...(board ? { board } : {}), ...(session.kind === "account" ? { feedback } : {}) });
     }
     const homeworkId = /^\/homework\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (homeworkId && session.kind === "account") return renderHomework(root, homeworkId, { api, token: session.token, kv: local, navigate });

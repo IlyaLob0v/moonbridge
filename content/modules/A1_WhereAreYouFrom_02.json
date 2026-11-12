@@ -42,5 +42,16 @@
     "A1_WhereAreYouFrom_02_translate_moscow",
     "A1_WhereAreYouFrom_02_choose_where",
     "A1_WhereAreYouFrom_02_find_error"
+  ],
+  "words": [
+    { "en": "Where are you from?", "ru": "Откуда вы?", "example": "Where are you from, Lev?" },
+    { "en": "lift", "ru": "лифт", "example": "Lev is the lift operator." },
+    { "en": "floor", "ru": "этаж", "example": "Floor thirteen." },
+    { "en": "Which floor?", "ru": "Какой этаж?", "example": "Good evening. I'm Lev. Which floor?" },
+    { "en": "lady", "ru": "дама, леди", "example": "A tall lady steps in." },
+    { "en": "tall", "ru": "высокий", "example": "A tall lady with very good teeth." },
+    { "en": "Irish", "ru": "ирландец, ирландский", "example": "Pip is from Ireland. She is Irish." },
+    { "en": "Careful!", "ru": "Осторожно!", "example": "Careful. Grandma Vee hears everything." },
+    { "en": "Try again", "ru": "Попробуйте ещё раз", "example": "Try again." }
   ]
 }

@@ -4,9 +4,11 @@ import { nextLesson, openHomework, when } from "../platform/school.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
 import { streakOf, todaysShift, type ShiftPlan } from "./daily.js";
-import { playEpisode } from "./player.js";
-import { completeEpisode, hotelView, markPractice, markShift, migrateState, openedUnits, studentCourse, type HotelView, type MoonbridgeState } from "./progress.js";
+import { playEpisode, playWelcome } from "./player.js";
+import { completeEpisode, hotelView, markPractice, markShift, markWelcomed, migrateState, openedUnits, studentCourse, type HotelView, type MoonbridgeState } from "./progress.js";
 import { playShift, shiftFinale } from "./shift.js";
+import { playReview, renderWords, reviewFinale } from "./words-view.js";
+import { myWords, reviewQueue, WordDeck, type MyWord } from "./words.js";
 
 // The Moonbridge section. It is loaded only when the student opens /moonbridge, so the
 // platform works, and stays light, without it. It keeps nothing but its own game state;
@@ -21,6 +23,8 @@ export interface SectionDeps {
   board?: Dashboard;
   /** "Сообщить о проблеме" under the hotel map, for signed-in testers. */
   feedback?: () => HTMLElement;
+  /** The student's name, for {name} in the welcome scene. */
+  playerName?: string;
 }
 
 const KEY = "moonbridge";
@@ -38,6 +42,40 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
   const view = hotelView(content, course, state, opened);
   const today = d.learner.day();
   const plan = await todaysShift(d.learner, state, opened);
+  const deck = await WordDeck.load(d.kv);
+  const words = myWords(d.learner.bundle, course, state, deck, d.learner.now());
+  const wordsDeps = { navigate: d.navigate, now: () => d.learner.now() };
+
+  // The first visit opens on the welcome scene instead of the map; /moonbridge/welcome replays it.
+  if (content.welcome && (path === "/moonbridge/welcome" || (path === "/moonbridge" && !state.welcomed))) {
+    await playWelcome(root, content.welcome, { content, learner: d.learner, mediaBase: d.mediaBase, name: d.playerName ?? "" });
+    await d.kv.set(KEY, markWelcomed(migrateState(await d.kv.get(KEY))));
+    root.replaceChildren(
+      el(
+        "div",
+        { class: "card episode-end", "data-welcome-end": "" },
+        el("h1", {}, "Добро пожаловать в Hotel Hello"),
+        ...(view.next
+          ? [
+              el("p", {}, `Первый эпизод: ${view.next.title.ru}. Около пяти минут.`),
+              el("button", { class: "primary", "data-start": view.next.episode_id, onclick: () => d.navigate(`/moonbridge/episode/${view.next!.episode_id}`) }, "Начать эпизод"),
+            ]
+          : []),
+        el("button", { class: view.next ? "" : "primary", onclick: () => d.navigate("/moonbridge") }, "Осмотреть отель"),
+      ),
+    );
+    return;
+  }
+
+  if (path === "/moonbridge/words") return renderWords(root, words, wordsDeps);
+  if (path === "/moonbridge/words/review") {
+    const queue = reviewQueue(words);
+    if (!queue.length) return d.navigate("/moonbridge/words");
+    const result = await playReview(root, queue, deck, wordsDeps);
+    await d.kv.set(KEY, markPractice(migrateState(await d.kv.get(KEY)), d.learner.day()));
+    root.replaceChildren(reviewFinale(result, wordsDeps));
+    return;
+  }
 
   if (path === "/moonbridge/shift") {
     if (!plan || !hasWork(plan) || state.shift_days.includes(today)) return d.navigate("/moonbridge");
@@ -78,7 +116,19 @@ export async function mountMoonbridge(root: HTMLElement, path: string, d: Sectio
     );
     return;
   }
-  renderMap(root, view, plan, state, today, d);
+  renderMap(root, view, plan, state, today, words, d);
+}
+
+/** «Мои слова» on the map: how many words, and how many wait for review. */
+function wordsCard(words: MyWord[], d: SectionDeps): HTMLElement {
+  const queue = reviewQueue(words).length;
+  return el(
+    "a",
+    { class: "card words-card", href: "/moonbridge/words", "data-link": "", "data-words-card": String(queue) },
+    el("h2", {}, "Мои слова"),
+    el("p", {}, words.length ? (queue ? `Слов в блокноте: ${words.length}. Ждут повтора: ${queue}.` : `Слов в блокноте: ${words.length}. На сегодня всё повторено.`) : "Слова из эпизодов появятся здесь после первого эпизода."),
+    el("span", { class: "card-action" }, queue ? "Повторить →" : "Открыть →"),
+  );
 }
 
 function hasWork(plan: ShiftPlan): boolean {
@@ -142,7 +192,7 @@ function shiftCard(plan: ShiftPlan | undefined, state: MoonbridgeState, today: n
   );
 }
 
-function renderMap(root: HTMLElement, view: HotelView, plan: ShiftPlan | undefined, state: MoonbridgeState, today: number, d: SectionDeps): void {
+function renderMap(root: HTMLElement, view: HotelView, plan: ShiftPlan | undefined, state: MoonbridgeState, today: number, words: MyWord[], d: SectionDeps): void {
   const map = el("div", { class: "hotel-map" });
   for (const p of view.places) {
     const done = p.episodes.filter((e) => e.done).length;
@@ -181,7 +231,9 @@ function renderMap(root: HTMLElement, view: HotelView, plan: ShiftPlan | undefin
       el("header", { class: "section-head" }, el("a", { href: "/", "data-link": "", class: "back" }, "← Платформа"), el("h1", {}, "Hotel Hello")),
       ...[lobbyBoard(d.board, d), shiftCard(plan, state, today, d)].filter((x): x is HTMLElement => x !== undefined),
       play,
+      wordsCard(words, d),
       map,
+      ...(d.learner.bundle.moonbridge?.welcome ? [el("a", { href: "/moonbridge/welcome", "data-link": "", class: "link replay-welcome" }, "Как устроен отель")] : []),
       ...(d.feedback ? [d.feedback()] : []),
     ),
   );

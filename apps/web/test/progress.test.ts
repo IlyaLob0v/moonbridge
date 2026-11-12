@@ -74,7 +74,7 @@ describe("MoonbridgeState", () => {
     expect(migrateState(undefined)).toEqual(emptyState());
     expect(migrateState({ version: 9 })).toEqual(emptyState());
     const s = completeEpisode(completeEpisode(emptyState(), "a"), "a");
-    expect(migrateState(JSON.parse(JSON.stringify(s)))).toEqual({ version: 1, completed_episodes: ["a"], practice_days: [], shift_days: [] });
+    expect(migrateState(JSON.parse(JSON.stringify(s)))).toEqual({ version: 1, completed_episodes: ["a"], practice_days: [], shift_days: [], welcomed: true });
     expect(migrateState({ version: 1, completed_episodes: [] }).practice_days).toEqual([]);
   });
 });

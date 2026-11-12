@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readXlsx, SHEETS, writeXlsx, type Workbook } from "@moonbridge/content/sheet";
 import { chromium, type Page } from "playwright";
-import { ARTIFACTS, check, finishEpisode, GATEWAY, logOf, noSideScroll, PHONE, startServers, step, stopServers, WEB } from "./lib.js";
+import { ARTIFACTS, check, finishEpisode, GATEWAY, hotelMap, logOf, noSideScroll, PHONE, startServers, step, stopServers, WEB } from "./lib.js";
 
 const EPISODE = "A1_NiceToMeetYou_01_check_in";
 const ADMIN = "e2e-admin-token";
@@ -135,6 +135,7 @@ async function main(): Promise<void> {
 
     step("The board in the Moonbridge lobby");
     await page.locator("[data-section=moonbridge]").click();
+    await hotelMap(page);
     const board = page.locator("[data-board]");
     await board.waitFor();
     check(/Урок/.test(await board.locator("[data-board-lesson]").innerText()), "the board shows the next lesson");
@@ -161,6 +162,7 @@ async function main(): Promise<void> {
 
     step("Phone 1: the unit 1 episode");
     await page.goto(`${WEB}/moonbridge`);
+    await hotelMap(page);
     check(/Вся домашка сдана/.test(await page.locator("[data-board]").innerText()), "the board knows the homework is in");
     await page.locator(".play-next").click();
     const saved = page.waitForResponse((r) => r.url().endsWith("/api/progress/snapshot") && r.request().method() === "PUT" && r.ok(), { timeout: 30_000 });

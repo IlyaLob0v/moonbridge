@@ -1,0 +1,93 @@
+{
+  "$schema": "../../packages/content/schemas/welcome.schema.json",
+  "schema_version": "2.0",
+  "place_id": "reception",
+  "title": { "en": "Welcome to Hotel Hello", "ru": "Добро пожаловать в Hotel Hello" },
+  "steps": [
+    {
+      "id": "bridge",
+      "kind": "line",
+      "speaker": "narrator",
+      "text": {
+        "en": "Between the moon and the river there is a bridge. On the bridge there is a hotel.",
+        "ru": "Между луной и рекой есть мост. На мосту стоит отель."
+      }
+    },
+    {
+      "id": "hello",
+      "kind": "line",
+      "speaker": "rocco",
+      "emotion": "happy",
+      "text": {
+        "en": "Hello, {name}! I'm Rocco, the night porter. Let me show you around.",
+        "ru": "Привет, {name}! Я Rocco, ночной портье. Сейчас всё покажу."
+      }
+    },
+    {
+      "id": "english",
+      "kind": "line",
+      "speaker": "rocco",
+      "text": {
+        "en": "Our guests speak only English. Here you learn it step by step, one story at a time.",
+        "ru": "Наши гости говорят только по-английски. Здесь вы выучите его шаг за шагом, история за историей."
+      }
+    },
+    {
+      "id": "episodes",
+      "kind": "line",
+      "speaker": "rocco",
+      "text": {
+        "en": "Every unit brings a new episode: a new place in the hotel and a new friend.",
+        "ru": "Каждый юнит курса — новый эпизод: новое место в отеле и новый знакомый. Эпизоды открываются вместе с уроками."
+      }
+    },
+    {
+      "id": "shift",
+      "kind": "line",
+      "speaker": "rocco",
+      "text": {
+        "en": "Every day there is a short shift: a guest of the day and the lost and found. Five or ten minutes.",
+        "ru": "Каждый день — короткая смена в отеле: гость дня и бюро находок. Пять–десять минут."
+      }
+    },
+    {
+      "id": "mistakes",
+      "kind": "line",
+      "speaker": "rocco",
+      "emotion": "upset",
+      "text": {
+        "en": "Mistakes don't disappear here. They go to the lost and found and come back later.",
+        "ru": "Ошибки здесь не пропадают. Они попадают в бюро находок и возвращаются через день, три и семь дней, пока вы их не исправите."
+      }
+    },
+    {
+      "id": "words",
+      "kind": "line",
+      "speaker": "rocco",
+      "text": {
+        "en": "New words go to your notebook, My words. They come back before you forget them.",
+        "ru": "Новые слова попадают в блокнот «Мои слова» и возвращаются на повтор, пока не запомнятся."
+      }
+    },
+    {
+      "id": "promise",
+      "kind": "line",
+      "speaker": "rocco",
+      "text": {
+        "en": "In a few weeks you will check in a guest, chat in the lift and order tea in the Night Café. In English.",
+        "ru": "Через несколько недель вы заселите гостя, поболтаете в лифте и закажете чай в Night Café. По-английски."
+      }
+    },
+    {
+      "id": "help",
+      "kind": "line",
+      "speaker": "rocco",
+      "emotion": "happy",
+      "text": {
+        "en": "Is a line hard? Tap «Перевод» under it. Ready? Your first night begins.",
+        "ru": "Трудная реплика? Нажмите «Перевод» под ней. Готовы? Первая ночь начинается."
+      }
+    },
+    { "id": "end", "kind": "end" }
+  ]
+}

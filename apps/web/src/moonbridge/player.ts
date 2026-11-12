@@ -1,4 +1,4 @@
-import type { Character, Emotion, Episode, MoonbridgeContent, Place, Task } from "@moonbridge/content";
+import type { Character, Emotion, Episode, MoonbridgeContent, Place, Task, Welcome } from "@moonbridge/content";
 import type { SubmitResult } from "@moonbridge/learning";
 import type { Learner } from "../core/learner.js";
 import { el } from "../ui/dom.js";
@@ -60,8 +60,9 @@ export class Stage {
     this.portrait.replaceChildren(...(who ? [portraitOf(who, emotion, this.d.mediaBase)] : []));
   }
 
-  line(en: string, ru?: string): Promise<void> {
-    return line(this.box, en, ru);
+  /** A line; `showRu` puts the translation under it at once instead of behind «Перевод». */
+  line(en: string, ru?: string, showRu = false): Promise<void> {
+    return line(this.box, en, ru, showRu);
   }
 
   /** Asks a task in the dialog box and records the answer; feedback appears for anything but a clean right answer. */
@@ -115,11 +116,39 @@ export async function playEpisode(root: HTMLElement, episode: Episode, d: Player
   return result;
 }
 
-function line(box: HTMLElement, en: string, ru: string | undefined): Promise<void> {
+/**
+ * The welcome scene of the first visit: the same stage as an episode, lines only, the translation
+ * always shown and {name} replaced with the student's name. "Пропустить" ends it at once; either
+ * way the student has seen the hotel's rules once. Resolves with how it ended.
+ */
+export async function playWelcome(root: HTMLElement, welcome: Welcome, d: PlayerDeps & { name: string }): Promise<"seen" | "skipped"> {
+  const place = d.content.places.find((p) => p.place_id === welcome.place_id) ?? d.content.places[0]!;
+  const characters = new Map(d.content.characters.map((c) => [c.character_id, residentSpeaker(c)]));
+  const stage = new Stage(root, place, welcome.title.ru, { "data-welcome": "" }, d);
+  const name = d.name.trim() || "гость";
+  const fill = (s: string) => s.replaceAll("{name}", name);
+  let skipped = false;
+  const skip = new Promise<void>((resolve) => {
+    stage.scene.append(el("button", { class: "link skip", type: "button", "data-skip": "", onclick: () => ((skipped = true), resolve()) }, "Пропустить"));
+  });
+  const ids = new Map(welcome.steps.map((s, i) => [s.id, i]));
+  for (let i = 0; i < welcome.steps.length && !skipped; ) {
+    const step = welcome.steps[i]!;
+    stage.scene.dataset.step = step.id;
+    if (step.kind === "end") break;
+    stage.show(step.speaker === "narrator" ? undefined : characters.get(step.speaker), step.emotion);
+    await Promise.race([stage.line(fill(step.text.en), fill(step.text.ru), true), skip]);
+    i = step.next !== undefined ? (ids.get(step.next) ?? welcome.steps.length) : i + 1;
+  }
+  return skipped ? "skipped" : "seen";
+}
+
+function line(box: HTMLElement, en: string, ru: string | undefined, showRu = false): Promise<void> {
   return new Promise((resolve) => {
     const text = el("p", { class: "line-text", lang: "en" }, en);
     const parts: HTMLElement[] = [text];
-    if (ru) {
+    if (ru && showRu) parts.push(el("p", { class: "line-ru", lang: "ru" }, ru));
+    else if (ru) {
       const translation = el("p", { class: "line-ru", lang: "ru", hidden: "" }, ru);
       const toggle = el("button", { class: "link", type: "button", onclick: () => (translation.toggleAttribute("hidden"), toggle.remove()) }, "Перевод");
       parts.push(translation, toggle);
