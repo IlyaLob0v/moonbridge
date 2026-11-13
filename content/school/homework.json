@@ -1,0 +1,129 @@
+{
+  "$schema": "../../packages/content/schemas/school-homework.schema.json",
+  "schema_version": "1.0",
+  "rubrics": [
+    {
+      "rubric_id": "voice",
+      "title": "Запись голоса",
+      "criteria": [
+        {
+          "id": "task",
+          "label": "Задание выполнено",
+          "max": 2,
+          "hint": "Сказано всё, что просили в задании"
+        },
+        {
+          "id": "grammar",
+          "label": "Грамматика юнита",
+          "max": 2,
+          "hint": "Новая грамматика без ошибок или с одной"
+        },
+        {
+          "id": "words",
+          "label": "Слова юнита",
+          "max": 2,
+          "hint": "Использовано 3 и больше новых слов"
+        },
+        {
+          "id": "pronunciation",
+          "label": "Произношение",
+          "max": 2,
+          "hint": "Понятно с первого раза"
+        }
+      ]
+    },
+    {
+      "rubric_id": "writing",
+      "title": "Короткий текст",
+      "criteria": [
+        {
+          "id": "task",
+          "label": "Задание выполнено",
+          "max": 2,
+          "hint": "Есть всё, что просили в задании"
+        },
+        {
+          "id": "grammar",
+          "label": "Грамматика юнита",
+          "max": 2
+        },
+        {
+          "id": "words",
+          "label": "Слова юнита",
+          "max": 2
+        },
+        {
+          "id": "spelling",
+          "label": "Орфография",
+          "max": 2
+        }
+      ]
+    }
+  ],
+  "prompts": [
+    {
+      "prompt_id": "nicetomeetyou_voice",
+      "module_id": "A1_NiceToMeetYou_01",
+      "kind": "voice",
+      "title": "Голосом: Представьтесь",
+      "instruction_ru": "[Заглушка] Запишите голосовое сообщение на 30–60 секунд по теме «Представьтесь». Используйте слова и грамматику юнита. Сдайте файл с диктофона.",
+      "rubric_id": "voice"
+    },
+    {
+      "prompt_id": "nicetomeetyou_writing",
+      "module_id": "A1_NiceToMeetYou_01",
+      "kind": "writing",
+      "title": "Текстом: Представьтесь",
+      "instruction_ru": "[Заглушка] Напишите 5–6 предложений по теме «Представьтесь». Можно от руки в тетради (сдайте фото) или в документе.",
+      "rubric_id": "writing"
+    },
+    {
+      "prompt_id": "whereareyoufrom_voice",
+      "module_id": "A1_WhereAreYouFrom_02",
+      "kind": "voice",
+      "title": "Голосом: Откуда вы",
+      "instruction_ru": "[Заглушка] Запишите голосовое сообщение на 30–60 секунд по теме «Откуда вы». Используйте слова и грамматику юнита. Сдайте файл с диктофона.",
+      "rubric_id": "voice"
+    },
+    {
+      "prompt_id": "whereareyoufrom_writing",
+      "module_id": "A1_WhereAreYouFrom_02",
+      "kind": "writing",
+      "title": "Текстом: Откуда вы",
+      "instruction_ru": "[Заглушка] Напишите 5–6 предложений по теме «Откуда вы». Можно от руки в тетради (сдайте фото) или в документе.",
+      "rubric_id": "writing"
+    },
+    {
+      "prompt_id": "thisismyroom_voice",
+      "module_id": "A1_ThisIsMyRoom_03",
+      "kind": "voice",
+      "title": "Голосом: Моя комната",
+      "instruction_ru": "[Заглушка] Запишите голосовое сообщение на 30–60 секунд по теме «Моя комната». Используйте слова и грамматику юнита. Сдайте файл с диктофона.",
+      "rubric_id": "voice"
+    },
+    {
+      "prompt_id": "thisismyroom_writing",
+      "module_id": "A1_ThisIsMyRoom_03",
+      "kind": "writing",
+      "title": "Текстом: Моя комната",
+      "instruction_ru": "[Заглушка] Напишите 5–6 предложений по теме «Моя комната». Можно от руки в тетради (сдайте фото) или в документе.",
+      "rubric_id": "writing"
+    },
+    {
+      "prompt_id": "nightcafe_voice",
+      "module_id": "A1_NightCafe_04",
+      "kind": "voice",
+      "title": "Голосом: В кафе",
+      "instruction_ru": "[Заглушка] Запишите голосовое сообщение на 30–60 секунд по теме «В кафе». Используйте слова и грамматику юнита. Сдайте файл с диктофона.",
+      "rubric_id": "voice"
+    },
+    {
+      "prompt_id": "nightcafe_writing",
+      "module_id": "A1_NightCafe_04",
+      "kind": "writing",
+      "title": "Текстом: В кафе",
+      "instruction_ru": "[Заглушка] Напишите 5–6 предложений по теме «В кафе». Можно от руки в тетради (сдайте фото) или в документе.",
+      "rubric_id": "writing"
+    }
+  ]
+}

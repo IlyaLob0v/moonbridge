@@ -2,7 +2,7 @@ import type { Character, Emotion, Episode, MoonbridgeContent, Place, Say, SceneT
 import type { SubmitResult } from "@moonbridge/learning";
 import type { Learner } from "../core/learner.js";
 import { el } from "../ui/dom.js";
-import { askTask, showFeedback } from "../ui/task-panel.js";
+import { askTask, ruleOf, showFeedback } from "../ui/task-panel.js";
 import { EpisodeRunner } from "./runner.js";
 import type { Sound } from "./sound.js";
 
@@ -262,7 +262,14 @@ export class Stage {
     void animate(this.box, [{ transform: "none" }, { transform: "translateX(-6px)" }, { transform: "translateX(5px)" }, { transform: "none" }], { duration: 300 });
     const label = o.errorType ? this.d.learner.bundle.taxonomy.error_types.find((t) => t.id === o.errorType)?.label.ru : undefined;
     const say: Say | undefined = who ? pick(who.reactions?.[kind]) : undefined;
-    await showFeedback(this.box, o, label, task, say ? { en: withName(say.en, this.d.playerName, "en"), ...(say.ru ? { ru: withName(say.ru, this.d.playerName, "ru") } : {}) } : undefined);
+    await showFeedback(
+      this.box,
+      o,
+      label,
+      task,
+      say ? { en: withName(say.en, this.d.playerName, "en"), ...(say.ru ? { ru: withName(say.ru, this.d.playerName, "ru") } : {}) } : undefined,
+      ruleOf(this.d.learner.bundle.modules, task.concept_id),
+    );
     return result;
   }
 

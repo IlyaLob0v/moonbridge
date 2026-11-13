@@ -192,6 +192,7 @@ export async function renderHomework(root: HTMLElement, homeworkId: string, d: H
     ...(h.description ? [el("p", { class: "hw-description" }, h.description)] : []),
     status,
     ...(h.submission?.review ? [reviewNote(h.submission.review)] : []),
+    ...(h.rubric ? [rubricNote(h.rubric, h.submission?.review?.scores)] : []),
   ];
   if (h.needs_file) parts.push(uploader(h, status, d));
   if (h.module_id) parts.push(unitPlan(h, d));
@@ -211,6 +212,22 @@ function unitPlan(h: HomeworkView, d: HomeworkPageDeps): HTMLElement {
     ...(next
       ? [el("button", { class: allDone ? "" : "primary", type: "button", "data-play": next, onclick: () => d.navigate(`/moonbridge/episode/${next}`) }, allDone ? "Сыграть ещё раз" : "Играть в Moonbridge")]
       : [el("p", { class: "muted" }, "Эпизоды этого юнита пока не загружены. Обновите страницу, когда будет интернет.")]),
+  );
+}
+
+/** What the work is graded by, and once graded the points for each. */
+function rubricNote(r: NonNullable<HomeworkView["rubric"]>, scores: Record<string, number> | undefined): HTMLElement {
+  return el(
+    "div",
+    { class: "rubric-note", "data-rubric": r.title },
+    el("p", {}, el("b", {}, scores ? "Баллы по критериям" : "Как оценивается")),
+    el(
+      "ul",
+      {},
+      ...r.criteria.map((c) =>
+        el("li", { "data-criterion": c.id }, `${c.label}: ${scores && scores[c.id] !== undefined ? `${scores[c.id]} из ${c.max}` : `до ${c.max}`}`, ...(c.hint && !scores ? [el("span", { class: "muted" }, ` — ${c.hint}`)] : [])),
+      ),
+    ),
   );
 }
 

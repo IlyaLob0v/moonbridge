@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   const { group } = await api<{ group: { group_id: string } }>("/school/groups", { method: "POST", body: JSON.stringify({ name: "A1 вечер", schedule: [{ weekday: 2, time: "18:30", minutes: 60 }] }) }, t);
   const { code } = await api<{ code: string }>(`/school/groups/${group.group_id}/invites`, { method: "POST" }, t);
   for (const s of [{ name: "Анна", login: "anna" }, { name: "Борис", login: "boris" }]) {
-    await api(`/invites/${code}/join`, { method: "POST", body: JSON.stringify({ ...s, password: "moon-123", email: `${s.login}@example.com` }) });
+    await api(`/invites/${code}/join`, { method: "POST", body: JSON.stringify({ ...s, password: "moon-123", email: `${s.login}@example.com`, accept_terms: true }) });
   }
   check(true, "a group with Anna and Boris");
 

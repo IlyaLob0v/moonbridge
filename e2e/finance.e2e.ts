@@ -42,8 +42,8 @@ async function main(): Promise<void> {
   const t = (await api<{ token: string }>("/auth/login", { body: { login: "ksenia", password: "teach-123" } })).token;
   const groupId = (await api<{ group: { group_id: string } }>("/school/groups", { token: t, body: { name: "A1 вечер" } })).group.group_id;
   const code = (await api<{ code: string }>(`/school/groups/${groupId}/invites`, { token: t, body: {} })).code;
-  await api(`/invites/${code}/join`, { body: { name: "Анна", login: "anna", password: "moon-123", email: "anna@example.com" } });
-  await api(`/invites/${code}/join`, { body: { name: "Борис", login: "boris", password: "moon-123", email: "boris@example.com" } });
+  await api(`/invites/${code}/join`, { body: { name: "Анна", login: "anna", password: "moon-123", email: "anna@example.com", accept_terms: true } });
+  await api(`/invites/${code}/join`, { body: { name: "Борис", login: "boris", password: "moon-123", email: "boris@example.com", accept_terms: true } });
 
   const anna = (await api<{ students: { id: string; name: string }[] }>("/school/finance", { token: t })).students.find((x) => x.name === "Анна")!;
   /** A lesson that started an hour ago, held, with Анна present: the lessons' attendance charges it. */

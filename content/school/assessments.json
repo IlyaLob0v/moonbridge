@@ -1,0 +1,448 @@
+{
+  "$schema": "../../packages/content/schemas/assessments.schema.json",
+  "schema_version": "1.0",
+  "assessments": [
+    {
+      "assessment_id": "entry",
+      "kind": "test",
+      "title": "Входной тест",
+      "pair": "final",
+      "intro_ru": "[Заглушка] 8 коротких заданий, минут на 10. Подсказок нет, ответы не показываются: это не оценка, а точка отсчёта, чтобы в конце увидеть, сколько вы выучили.",
+      "tasks": [
+        {
+          "task_id": "A1_EntryTest_01_greet",
+          "concept_id": "test.basics",
+          "type": "choice",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "Hello! I'm Anna.",
+            "options": [
+              {
+                "id": "a",
+                "text": "Nice to meet you."
+              },
+              {
+                "id": "b",
+                "text": "Goodbye."
+              },
+              {
+                "id": "c",
+                "text": "Thank you."
+              }
+            ]
+          },
+          "answer": {
+            "accepted": [
+              "a"
+            ],
+            "known_errors": [
+              {
+                "match": [
+                  "b",
+                  "c"
+                ],
+                "error_type": "lexis.wrong_word"
+              }
+            ]
+          }
+        },
+        {
+          "task_id": "A1_EntryTest_01_am",
+          "concept_id": "test.be",
+          "type": "gap_fill",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "I ___ a teacher."
+          },
+          "answer": {
+            "accepted": [
+              "am"
+            ]
+          }
+        },
+        {
+          "task_id": "A1_EntryTest_01_is",
+          "concept_id": "test.be",
+          "type": "gap_fill",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "He ___ from Italy."
+          },
+          "answer": {
+            "accepted": [
+              "is"
+            ]
+          }
+        },
+        {
+          "task_id": "A1_EntryTest_01_are",
+          "concept_id": "test.be",
+          "type": "gap_fill",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "We ___ in the café."
+          },
+          "answer": {
+            "accepted": [
+              "are"
+            ]
+          }
+        },
+        {
+          "task_id": "A1_EntryTest_01_there",
+          "concept_id": "test.basics",
+          "type": "choice",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "___ a bed in my room.",
+            "options": [
+              {
+                "id": "a",
+                "text": "There is"
+              },
+              {
+                "id": "b",
+                "text": "There are"
+              },
+              {
+                "id": "c",
+                "text": "It are"
+              }
+            ]
+          },
+          "answer": {
+            "accepted": [
+              "a"
+            ],
+            "known_errors": [
+              {
+                "match": [
+                  "b",
+                  "c"
+                ],
+                "error_type": "grammar.agreement"
+              }
+            ]
+          }
+        },
+        {
+          "task_id": "A1_EntryTest_01_article",
+          "concept_id": "test.basics",
+          "type": "choice",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "Can I have ___ apple, please?",
+            "options": [
+              {
+                "id": "a",
+                "text": "a"
+              },
+              {
+                "id": "b",
+                "text": "an"
+              },
+              {
+                "id": "c",
+                "text": "the two"
+              }
+            ]
+          },
+          "answer": {
+            "accepted": [
+              "b"
+            ],
+            "known_errors": [
+              {
+                "match": [
+                  "a",
+                  "c"
+                ],
+                "error_type": "grammar.article"
+              }
+            ]
+          }
+        },
+        {
+          "task_id": "A1_EntryTest_01_from",
+          "concept_id": "test.sentences",
+          "type": "translate_ru_en",
+          "difficulty": 2,
+          "presentation": {
+            "prompt": "Переведите на английский",
+            "source": "Она из Германии."
+          },
+          "answer": {
+            "accepted": [
+              "She is from Germany.",
+              "She's from Germany."
+            ]
+          }
+        },
+        {
+          "task_id": "A1_EntryTest_01_coffee",
+          "concept_id": "test.sentences",
+          "type": "translate_ru_en",
+          "difficulty": 2,
+          "presentation": {
+            "prompt": "Переведите на английский",
+            "source": "Можно мне кофе, пожалуйста?"
+          },
+          "answer": {
+            "accepted": [
+              "Can I have a coffee, please?",
+              "Can I have coffee, please?",
+              "Could I have a coffee, please?"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "assessment_id": "final",
+      "kind": "test",
+      "title": "Итоговый тест",
+      "pair": "entry",
+      "intro_ru": "[Заглушка] Те же темы, что во входном тесте. Минут 10, без подсказок.",
+      "tasks": [
+        {
+          "task_id": "A1_FinalTest_01_greet",
+          "concept_id": "test.basics",
+          "type": "choice",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "Hello! I'm Anna.",
+            "options": [
+              {
+                "id": "a",
+                "text": "Nice to meet you."
+              },
+              {
+                "id": "b",
+                "text": "Goodbye."
+              },
+              {
+                "id": "c",
+                "text": "Thank you."
+              }
+            ]
+          },
+          "answer": {
+            "accepted": [
+              "a"
+            ],
+            "known_errors": [
+              {
+                "match": [
+                  "b",
+                  "c"
+                ],
+                "error_type": "lexis.wrong_word"
+              }
+            ]
+          }
+        },
+        {
+          "task_id": "A1_FinalTest_01_am",
+          "concept_id": "test.be",
+          "type": "gap_fill",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "I ___ a teacher."
+          },
+          "answer": {
+            "accepted": [
+              "am"
+            ]
+          }
+        },
+        {
+          "task_id": "A1_FinalTest_01_is",
+          "concept_id": "test.be",
+          "type": "gap_fill",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "He ___ from Italy."
+          },
+          "answer": {
+            "accepted": [
+              "is"
+            ]
+          }
+        },
+        {
+          "task_id": "A1_FinalTest_01_are",
+          "concept_id": "test.be",
+          "type": "gap_fill",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "We ___ in the café."
+          },
+          "answer": {
+            "accepted": [
+              "are"
+            ]
+          }
+        },
+        {
+          "task_id": "A1_FinalTest_01_there",
+          "concept_id": "test.basics",
+          "type": "choice",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "___ a bed in my room.",
+            "options": [
+              {
+                "id": "a",
+                "text": "There is"
+              },
+              {
+                "id": "b",
+                "text": "There are"
+              },
+              {
+                "id": "c",
+                "text": "It are"
+              }
+            ]
+          },
+          "answer": {
+            "accepted": [
+              "a"
+            ],
+            "known_errors": [
+              {
+                "match": [
+                  "b",
+                  "c"
+                ],
+                "error_type": "grammar.agreement"
+              }
+            ]
+          }
+        },
+        {
+          "task_id": "A1_FinalTest_01_article",
+          "concept_id": "test.basics",
+          "type": "choice",
+          "difficulty": 1,
+          "presentation": {
+            "prompt": "Can I have ___ apple, please?",
+            "options": [
+              {
+                "id": "a",
+                "text": "a"
+              },
+              {
+                "id": "b",
+                "text": "an"
+              },
+              {
+                "id": "c",
+                "text": "the two"
+              }
+            ]
+          },
+          "answer": {
+            "accepted": [
+              "b"
+            ],
+            "known_errors": [
+              {
+                "match": [
+                  "a",
+                  "c"
+                ],
+                "error_type": "grammar.article"
+              }
+            ]
+          }
+        },
+        {
+          "task_id": "A1_FinalTest_01_from",
+          "concept_id": "test.sentences",
+          "type": "translate_ru_en",
+          "difficulty": 2,
+          "presentation": {
+            "prompt": "Переведите на английский",
+            "source": "Она из Германии."
+          },
+          "answer": {
+            "accepted": [
+              "She is from Germany.",
+              "She's from Germany."
+            ]
+          }
+        },
+        {
+          "task_id": "A1_FinalTest_01_coffee",
+          "concept_id": "test.sentences",
+          "type": "translate_ru_en",
+          "difficulty": 2,
+          "presentation": {
+            "prompt": "Переведите на английский",
+            "source": "Можно мне кофе, пожалуйста?"
+          },
+          "answer": {
+            "accepted": [
+              "Can I have a coffee, please?",
+              "Can I have coffee, please?",
+              "Could I have a coffee, please?"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "assessment_id": "pilot_survey",
+      "kind": "survey",
+      "title": "Анкета после пилота",
+      "intro_ru": "[Заглушка] Пара минут. Ответы видит только преподаватель.",
+      "questions": [
+        {
+          "id": "overall",
+          "kind": "scale",
+          "text": "Насколько вам понравилось заниматься? (1 — совсем нет, 5 — очень)"
+        },
+        {
+          "id": "game",
+          "kind": "scale",
+          "text": "Насколько игра Moonbridge помогала заниматься каждый день?"
+        },
+        {
+          "id": "time",
+          "kind": "choice",
+          "text": "Сколько времени в день удобно тратить на практику?",
+          "options": [
+            "5 минут",
+            "10–15 минут",
+            "20–30 минут",
+            "Больше"
+          ]
+        },
+        {
+          "id": "continue",
+          "kind": "choice",
+          "text": "Хотите продолжить обучение?",
+          "options": [
+            "Да",
+            "Скорее да",
+            "Пока не знаю",
+            "Нет"
+          ]
+        },
+        {
+          "id": "best",
+          "kind": "text",
+          "text": "Что понравилось больше всего?",
+          "optional": true
+        },
+        {
+          "id": "worst",
+          "kind": "text",
+          "text": "Что мешало или раздражало?",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

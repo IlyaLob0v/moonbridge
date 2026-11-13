@@ -125,7 +125,7 @@ async function main(): Promise<void> {
   const group = (await api<{ group: { group_id: string } }>("/school/groups", { token: teacherToken, body: { name: "Друзья", schedule: [], unit_access: "course" } })).json.group;
   const invite = (await api<{ code: string }>(`/school/groups/${group.group_id}/invites`, { token: teacherToken, body: {} })).json;
   for (const s of students) {
-    const joined = await api(`/invites/${invite.code}/join`, { body: { name: s.name, login: s.login, password: "moon-123", email: `${s.login}@example.com` } });
+    const joined = await api(`/invites/${invite.code}/join`, { body: { name: s.name, login: s.login, password: "moon-123", email: `${s.login}@example.com`, accept_terms: true } });
     check(joined.status === 201 || joined.status === 200, `${s.name} has an account`);
   }
 

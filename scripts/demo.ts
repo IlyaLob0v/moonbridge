@@ -85,7 +85,7 @@ async function seed(): Promise<string> {
     });
   }
   const invite = (await api<{ code: string }>(`/school/groups/${groupId}/invites`, { token, body: {} })).json.code;
-  for (const s of STUDENTS) await api(`/invites/${invite}/join`, { body: s }); // 409 when the login is taken
+  for (const s of STUDENTS) await api(`/invites/${invite}/join`, { body: { ...s, accept_terms: true } }); // 409 when the login is taken
   return invite;
 }
 

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonbridge.example.com/schemas/school-homework.schema.json",
+  "title": "File homework prompts and rubrics",
+  "description": "Homework a student hands in as a file (a voice recording or a short text) and the criteria the teacher grades it by. A prompt belongs to a unit and shows in the lesson catalog; the teacher gives it with one tap. The rubric is copied into the homework when it is given, so a later edit here does not change criteria of homework already graded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "rubrics", "prompts"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": "1.0" },
+    "rubrics": { "type": "array", "items": { "$ref": "#/$defs/rubric" } },
+    "prompts": { "type": "array", "items": { "$ref": "#/$defs/prompt" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rubric_id", "title", "criteria"],
+      "properties": {
+        "rubric_id": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "minLength": 1 },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "max"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "label": { "type": "string", "minLength": 1 },
+              "max": { "type": "integer", "minimum": 1, "maximum": 10, "description": "Points for this criterion; the grade 1–5 is suggested from the share of all points." },
+              "hint": { "type": "string", "description": "What full points look like, for the teacher." }
+            }
+          }
+        }
+      }
+    },
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt_id", "module_id", "kind", "title", "instruction_ru", "rubric_id"],
+      "properties": {
+        "prompt_id": { "$ref": "#/$defs/id" },
+        "module_id": { "type": "string", "pattern": "^(A1|A2|B1|B2|C1|C2)_[A-Za-z0-9]+_[0-9]{2}$" },
+        "kind": { "enum": ["voice", "writing"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "instruction_ru": { "type": "string", "minLength": 1, "maxLength": 4000, "description": "What to do, as the student reads it on the homework page." },
+        "rubric_id": { "$ref": "#/$defs/id" }
+      }
+    }
+  }
+}

@@ -122,3 +122,18 @@ export function verifyMail(r: Recipient, url: string, hours: number): Mail {
     button: { label: "Подтвердить почту", url },
   });
 }
+
+/** To a minor's parent: what the school is, and the button to the consent page. */
+export function parentConsentMail(r: Recipient, student: { name: string }, url: string, days: number): Mail {
+  return layout({
+    to: r.email,
+    subject: `Согласие на занятия: ${student.name}`,
+    lines: [
+      `${r.name}, здравствуйте! ${student.name} записывается на занятия английским в нашей школе и указал(а) вас как родителя.`,
+      "Ученику младше 18 лет нужно ваше согласие на обработку его данных: ответов на задания, записей голоса в домашках, посещаемости.",
+      `По кнопке откроется текст согласия и договора. Ссылка работает ${days} дней.`,
+      "Если вы не знаете, о чём речь, просто удалите это письмо.",
+    ],
+    button: { label: "Прочитать и согласиться", url },
+  });
+}

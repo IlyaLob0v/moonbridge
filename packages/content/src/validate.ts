@@ -8,8 +8,12 @@ import charactersSchema from "../schemas/characters.schema.json" with { type: "j
 import episodeSchema from "../schemas/episode.schema.json" with { type: "json" };
 import dailySchema from "../schemas/daily.schema.json" with { type: "json" };
 import welcomeSchema from "../schemas/welcome.schema.json" with { type: "json" };
+import pageSchema from "../schemas/page.schema.json" with { type: "json" };
+import schoolHomeworkSchema from "../schemas/school-homework.schema.json" with { type: "json" };
+import assessmentsSchema from "../schemas/assessments.schema.json" with { type: "json" };
 import { normalizeAnswer, tokenize } from "./normalize.js";
 import type {
+  Assessment,
   Character,
   ContentSource,
   Course,
@@ -19,7 +23,11 @@ import type {
   ErrorTaxonomy,
   Module,
   MoonbridgeContent,
+  Page,
   Place,
+  Rubric,
+  HomeworkPrompt,
+  SchoolContent,
   SourceFile,
   Task,
   TaskSet,
@@ -43,6 +51,7 @@ export interface ValidatedContent {
   taskSets: TaskSet[];
   courses: Course[];
   moonbridge?: MoonbridgeContent;
+  school?: SchoolContent;
 }
 
 export interface ValidationResult {
@@ -63,6 +72,10 @@ const validators = {
   episode: ajv.compile(episodeSchema),
   daily: ajv.compile(dailySchema),
   welcome: ajv.compile(welcomeSchema),
+  page: ajv.compile(pageSchema),
+  schoolHomework: ajv.compile(schoolHomeworkSchema),
+  // Refers to the task definition of the task set schema, compiled above.
+  assessments: ajv.compile(assessmentsSchema),
 };
 
 function schemaPass<T>(files: SourceFile[], validate: ValidateFunction, issues: Issue[]): SourceFile<T>[] {
@@ -105,6 +118,9 @@ export function validateContent(source: ContentSource): ValidationResult {
   const episodeFiles = schemaPass<Episode>(source.episodes ?? [], validators.episode, issues);
   const dailyFiles = schemaPass<DailyContent>(source.daily ?? [], validators.daily, issues);
   const welcomeFiles = schemaPass<Welcome>(source.welcome ?? [], validators.welcome, issues);
+  const pageFiles = schemaPass<Page>(source.pages ?? [], validators.page, issues);
+  const homeworkFiles = schemaPass<{ rubrics: Rubric[]; prompts: HomeworkPrompt[] }>(source.schoolHomework ?? [], validators.schoolHomework, issues);
+  const assessmentFiles = schemaPass<{ assessments: Assessment[] }>(source.assessments ?? [], validators.assessments, issues);
 
   if (source.taxonomy.length !== 1) {
     err("taxonomy/", "taxonomy.count", `expected exactly one error taxonomy file, found ${source.taxonomy.length}`);
@@ -231,6 +247,9 @@ export function validateContent(source: ContentSource): ValidationResult {
     ? checkMoonbridge(placeFiles, characterFiles, episodeFiles, dailyFiles, welcomeFiles, modules, tasks, positions, err, warn)
     : undefined;
 
+  const hasSchool = [pageFiles, homeworkFiles, assessmentFiles].some((f) => f.length > 0);
+  const school = hasSchool ? checkSchool(pageFiles, homeworkFiles, assessmentFiles, modules, errorTypes, err, warn) : undefined;
+
   const ok = !issues.some((i) => i.severity === "error");
   return {
     ok,
@@ -242,8 +261,94 @@ export function validateContent(source: ContentSource): ValidationResult {
           taskSets: taskSetFiles.map((f) => f.data),
           courses: courseFiles.map((f) => f.data),
           ...(moonbridge ? { moonbridge } : {}),
+          ...(school ? { school } : {}),
         }
       : undefined,
+  };
+}
+
+/** Items with their files, the first of each id kept; a repeated id is an error. */
+function uniq<T>(items: { file: string; item: T }[], idOf: (t: T) => string, label: string, err: Report): T[] {
+  const seen = new Map<string, T>();
+  for (const { file, item } of items) {
+    const id = idOf(item);
+    if (seen.has(id)) err(file, `duplicate.${label}`, `${label} "${id}" is defined twice`);
+    else seen.set(id, item);
+  }
+  return [...seen.values()];
+}
+
+/** Legal pages need an edition date: students accept each edition. */
+const LEGAL = new Set(["privacy", "terms", "consent", "parent-consent"]);
+
+/**
+ * The school's texts and forms. A prompt of a unit the sheet has removed is only a warning: the
+ * sheet changes units, this file lives in the repository, and a stale prompt must not block it.
+ */
+function checkSchool(
+  pageFiles: SourceFile<Page>[],
+  homeworkFiles: SourceFile<{ rubrics: Rubric[]; prompts: HomeworkPrompt[] }>[],
+  assessmentFiles: SourceFile<{ assessments: Assessment[] }>[],
+  modules: Map<string, unknown>,
+  errorTypes: Set<string>,
+  err: Report,
+  warn: Report,
+): SchoolContent {
+  if (homeworkFiles.length > 1) err("school/", "school.files", "at most one school/homework.json");
+  if (assessmentFiles.length > 1) err("school/", "school.files", "at most one school/assessments.json");
+  const pages = uniq(pageFiles.map((f) => ({ file: f.path, item: f.data })), (p) => p.page_id, "page", err);
+  for (const { path, data } of pageFiles) {
+    if (LEGAL.has(data.page_id) && !data.version) err(path, "page.version", `legal page "${data.page_id}" needs a version (the edition date)`);
+  }
+  for (const id of LEGAL) if (pageFiles.length && !pages.some((p) => p.page_id === id)) warn("school/pages/", "page.legal", `no "${id}.md": sign-up will link to a missing page`);
+
+  const rubrics: Rubric[] = [];
+  const prompts: HomeworkPrompt[] = [];
+  for (const { path, data } of homeworkFiles) {
+    rubrics.push(...uniq(data.rubrics.map((r) => ({ file: path, item: r })), (r) => r.rubric_id, "rubric", err));
+    for (const r of data.rubrics) {
+      const ids = new Set<string>();
+      for (const c of r.criteria) {
+        if (ids.has(c.id)) err(`${path} › ${r.rubric_id}`, "duplicate.criterion", `criterion "${c.id}" is listed twice`);
+        ids.add(c.id);
+      }
+    }
+    prompts.push(...uniq(data.prompts.map((p) => ({ file: path, item: p })), (p) => p.prompt_id, "prompt", err));
+    for (const p of data.prompts) {
+      if (!data.rubrics.some((r) => r.rubric_id === p.rubric_id)) err(`${path} › ${p.prompt_id}`, "ref.rubric", `rubric "${p.rubric_id}" does not exist`);
+      if (!modules.has(p.module_id)) warn(`${path} › ${p.prompt_id}`, "ref.module", `unit "${p.module_id}" is not in the course: the prompt will not show in the catalog`);
+    }
+  }
+
+  const assessments: Assessment[] = [];
+  for (const { path, data } of assessmentFiles) {
+    assessments.push(...uniq(data.assessments.map((a) => ({ file: path, item: a })), (a) => a.assessment_id, "assessment", err));
+    const taskIds = new Set<string>();
+    for (const a of data.assessments) {
+      const where = `${path} › ${a.assessment_id}`;
+      if (a.kind === "test") {
+        for (const t of a.tasks) {
+          if (taskIds.has(t.task_id)) err(where, "duplicate.task_id", `task "${t.task_id}" is used twice in the tests`);
+          taskIds.add(t.task_id);
+          if (t.presentation.hint) warn(`${where} › ${t.task_id}`, "test.hint", "a test shows no hints: this one is ignored");
+          checkAnswer(t, `${where} › ${t.task_id}`, errorTypes, err, warn);
+        }
+        if (a.pair && !data.assessments.some((x) => x.assessment_id === a.pair && x.kind === "test")) err(where, "ref.pair", `paired test "${a.pair}" does not exist`);
+      } else {
+        const ids = new Set<string>();
+        for (const q of a.questions) {
+          if (ids.has(q.id)) err(where, "duplicate.question", `question "${q.id}" is listed twice`);
+          ids.add(q.id);
+          if (q.kind === "choice" && !q.options?.length) err(`${where} › ${q.id}`, "survey.options", "a choice question needs options");
+        }
+      }
+    }
+  }
+  return {
+    pages: [...pages].sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.page_id.localeCompare(b.page_id)),
+    rubrics,
+    homework_prompts: prompts,
+    assessments,
   };
 }
 

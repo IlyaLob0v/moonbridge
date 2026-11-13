@@ -140,9 +140,56 @@ export async function renderStudentReport(root: HTMLElement, accountId: string, 
         ),
         ...reportBody(r, now),
       ),
+      ...(r.consent ? [consentSection(root, r, d)] : []),
       el("section", { class: "card" }, el("h2", {}, "Вход"), el("p", { class: "muted" }, "Если ученик забыл пароль, задайте новый и передайте ему."), reset, password),
     ),
   );
+}
+
+/** The student's consents, and the paper consent of a parent the teacher records. */
+function consentSection(root: HTMLElement, r: StudentReport, d: ReportDeps): HTMLElement {
+  const c = r.consent!;
+  const lines: string[] = [c.terms === "ok" ? "Документы школы приняты." : "Документы школы ещё не приняты (новая редакция или новый ученик)."];
+  if (c.minor) {
+    lines.push(
+      c.parent === "ok"
+        ? `Согласие родителя получено${c.parent_method === "paper" ? " на бумаге" : " по ссылке из письма"}.`
+        : c.parent === "pending"
+          ? `Ждём согласия родителя: письмо отправлено${c.parent_email ? ` на ${c.parent_email}` : ""}.`
+          : "Ученику меньше 18 лет, а почта родителя не указана.",
+    );
+  }
+  const section = el("section", { class: "card consent-status", "data-consent": c.required ? "required" : "ok" }, el("h2", {}, "Согласия"), ...lines.map((l) => el("p", {}, l)));
+  if (c.parent !== "ok") {
+    const name = el("input", { class: "answer", name: "parent_name", maxlength: "80", placeholder: "Имя родителя", "aria-label": "Имя родителя" }) as HTMLInputElement;
+    const error = el("p", { class: "form-error", role: "alert" });
+    const save = el("button", { type: "submit", "data-paper-consent": "" }, "Согласие родителя получено на бумаге") as HTMLButtonElement;
+    section.append(
+      el(
+        "form",
+        {
+          class: "paper-consent",
+          onsubmit: async (e: Event) => {
+            e.preventDefault();
+            if (!d.token || !confirm(`Отметить, что родитель ${r.student.name} подписал согласие на бумаге? Бланк храните в школе.`)) return;
+            save.disabled = true;
+            try {
+              await d.api.paperConsent(d.token, r.student.id, name.value.trim());
+              await renderStudentReport(root, r.student.id, undefined, d);
+            } catch {
+              error.textContent = "Не получилось сохранить.";
+              save.disabled = false;
+            }
+          },
+        },
+        el("p", { class: "muted" }, "Если родитель подписал бланк согласия, отметьте это здесь. Ученику младше 18 лет это откроет платформу."),
+        name,
+        error,
+        save,
+      ),
+    );
+  }
+  return section;
 }
 
 /** "Моя неделя" for the student's Today. */

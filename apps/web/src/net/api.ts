@@ -1,4 +1,4 @@
-import type { ContentBundle } from "@moonbridge/content";
+import type { ContentBundle, HomeworkPrompt, Page, Rubric, SurveyQuestion, Task } from "@moonbridge/content";
 import type { SendOutcome, Statement, StatementSink } from "@moonbridge/xapi";
 import type { Snapshot } from "./backup.js";
 
@@ -42,8 +42,54 @@ export interface SubmissionView {
   /** A unit's result: tasks right on the first try out of all, and the grade that suggests. */
   score: { right: number; total: number; suggested_grade: number } | null;
   submitted_at: string;
-  /** The teacher's grade (1–5) and comment; null until the teacher has looked at this file. */
-  review: { grade: number; comment: string; reviewed_at: string } | null;
+  /** The teacher's grade (1–5) and comment; null until the teacher has looked at this file. With a rubric, the points per criterion. */
+  review: { grade: number; comment: string; reviewed_at: string; scores?: Record<string, number> } | null;
+}
+
+/** The criteria a file homework is graded by. */
+export interface RubricView {
+  title: string;
+  criteria: { id: string; label: string; max: number; hint?: string }[];
+}
+
+/** The student's consents (apps/server/src/school/consents.ts); `required` = only the consent card until false. */
+export interface ConsentView {
+  required: boolean;
+  terms: "ok" | "needed";
+  documents: { page_id: string; title: string; version: string }[];
+  minor: boolean;
+  parent: "not_needed" | "needed" | "pending" | "ok";
+  parent_email: string | null;
+  parent_method: "email" | "paper" | null;
+  parent_by_email: boolean;
+}
+
+/** An open test or survey of the student's group. */
+export interface AssessmentCard {
+  assessment_id: string;
+  group_id: string;
+  kind: "test" | "survey";
+  title: string;
+  items: number;
+  done: boolean;
+}
+
+/** A test (tasks without answers) or a survey, as the student takes it. */
+export type AssessmentToTake =
+  | { assessment_id: string; kind: "test"; title: string; intro_ru?: string; tasks: Task[] }
+  | { assessment_id: string; kind: "survey"; title: string; intro_ru?: string; questions: SurveyQuestion[] };
+
+/** The teacher's view of one test or survey for a group. */
+export interface GroupAssessment {
+  assessment_id: string;
+  kind: "test" | "survey";
+  title: string;
+  pair?: string;
+  items?: number;
+  questions?: { id: string; kind: SurveyQuestion["kind"]; text: string }[];
+  state: "not_opened" | "open" | "closed";
+  opened_at: string | null;
+  results: { id: string; name: string; result: { submitted_at: string; score: { right: number; total: number } | null; answers: unknown } | null }[];
 }
 
 /** A student's practice in a week, from their answers. */
@@ -68,7 +114,7 @@ export interface AttendanceCount {
 
 export interface GroupProgress {
   week: { from: string; to: string };
-  students: { id: string; name: string; week: PracticeView; homework_open: number; lessons?: AttendanceCount }[];
+  students: { id: string; name: string; week: PracticeView; homework_open: number; lessons?: AttendanceCount; consent?: { required: boolean; minor: boolean; parent: ConsentView["parent"] } }[];
 }
 
 export type LessonStatus = "planned" | "held" | "cancelled";
@@ -193,10 +239,14 @@ export interface StudentReport {
   homework: HomeworkView[];
   /** The week's lessons that have started, with the student's marks. */
   lessons?: AttendanceCount & { lessons: StudentLesson[] };
+  /** Where the school asks for consents. */
+  consent?: ConsentView;
 }
 
 export interface QueueItem extends SubmissionView {
   homework_title: string;
+  /** The homework's criteria, to grade by points. Missing from an older gateway. */
+  homework_rubric?: RubricView | null;
 }
 
 export interface GroupView {
@@ -224,6 +274,8 @@ export interface HomeworkView {
   account_id: string | null;
   assignee_name: string | null;
   auto_grade: boolean;
+  /** The criteria of a file homework; null without them. Missing in a dashboard kept from an older version. */
+  rubric?: RubricView | null;
   created_at: string;
   /** Students, for a unit: its episodes and which of them they have played since it was given. */
   unit?: { title: string; episodes: { episode_id: string; title: string; done: boolean }[] };
@@ -236,6 +288,10 @@ export interface HomeworkView {
 /** The student's or the teacher's school: groups, schedule and homework. */
 export interface Dashboard {
   account: AccountInfo;
+  /** Students, where the school asks for consents. */
+  consent?: ConsentView;
+  /** Students: the tests and surveys open for their groups. */
+  assessments?: AssessmentCard[];
   groups: GroupView[];
   homework: HomeworkView[];
   /**
@@ -259,6 +315,8 @@ export interface NewHomework {
   module_id?: string;
   account_id?: string | null;
   auto_grade?: boolean;
+  prompt_id?: string;
+  rubric_id?: string | null;
 }
 
 /** A unit of the lesson catalog (apps/server/src/school/units.ts). */
@@ -408,7 +466,7 @@ export class Api {
   }
 
   authOptions() {
-    return this.json<{ guest: boolean; password_reset?: boolean }>("/auth/options");
+    return this.json<{ guest: boolean; password_reset?: boolean; consent?: boolean }>("/auth/options");
   }
 
   /** "Забыли пароль?": the gateway answers the same whether or not the login exists. */
@@ -448,7 +506,11 @@ export class Api {
   }
 
   /** Joins the invitation's group: a new student account, or the signed-in one when `token` is an account's. */
-  join(code: string, fields: { name: string; login: string; password: string; email?: string } | undefined, token?: string) {
+  join(
+    code: string,
+    fields: { name: string; login: string; password: string; email?: string; accept_terms?: boolean; minor?: boolean; parent_name?: string; parent_email?: string } | undefined,
+    token?: string,
+  ) {
     return this.json<SignedIn & { group: GroupView }>(`/invites/${encodeURIComponent(code)}/join`, { method: "POST", body: JSON.stringify(fields ?? {}) }, token);
   }
 
@@ -474,7 +536,42 @@ export class Api {
 
   /** The lesson catalog: units in course order with their Moonbridge episodes. */
   catalog(token: string) {
-    return this.json<{ units: CatalogUnit[] }>("/school/catalog", {}, token);
+    return this.json<{ units: CatalogUnit[]; prompts?: HomeworkPrompt[]; rubrics?: Rubric[] }>("/school/catalog", {}, token);
+  }
+
+  /** Help and legal pages, for anyone. */
+  pages() {
+    return this.json<{ pages: Pick<Page, "page_id" | "title" | "audience" | "version">[] }>("/pages");
+  }
+
+  page(id: string) {
+    return this.json<{ page: Page }>(`/pages/${encodeURIComponent(id)}`);
+  }
+
+  /** The consent card: the tick, and the age with the parent's name and address. */
+  consent(token: string, body: { accept?: boolean; minor?: boolean; parent_name?: string; parent_email?: string }) {
+    return this.json<{ consent: ConsentView | null }>("/account/consent", { method: "POST", body: JSON.stringify(body) }, token);
+  }
+
+  /** The teacher records a parent's consent signed on paper. */
+  paperConsent(token: string, studentId: string, parentName: string) {
+    return this.json<{ consent: ConsentView | null }>(`/school/students/${studentId}/parent-consent`, { method: "POST", body: JSON.stringify(parentName ? { parent_name: parentName } : {}) }, token);
+  }
+
+  assessment(token: string, groupId: string, id: string) {
+    return this.json<{ assessment: AssessmentToTake }>(`/school/assessments/${groupId}/${id}`, {}, token);
+  }
+
+  submitAssessment(token: string, groupId: string, id: string, answers: unknown) {
+    return this.json<{ ok: true }>(`/school/assessments/${groupId}/${id}`, { method: "POST", body: JSON.stringify({ answers }) }, token);
+  }
+
+  groupAssessments(token: string, groupId: string) {
+    return this.json<{ assessments: GroupAssessment[] }>(`/school/groups/${groupId}/assessments`, {}, token);
+  }
+
+  setAssessment(token: string, groupId: string, id: string, action: "open" | "close") {
+    return this.json<{ ok: true }>(`/school/groups/${groupId}/assessments/${id}/${action}`, { method: "POST" }, token);
   }
 
   /** The account's lessons: the last two months and the coming four weeks. */
@@ -525,8 +622,8 @@ export class Api {
     return this.json<{ submissions: QueueItem[] }>("/school/review-queue", {}, token);
   }
 
-  review(token: string, submissionId: string, grade: number, comment: string) {
-    return this.json<{ submission: SubmissionView }>(`/school/submissions/${submissionId}/review`, { method: "POST", body: JSON.stringify({ grade, comment }) }, token);
+  review(token: string, submissionId: string, grade: number, comment: string, scores?: Record<string, number>) {
+    return this.json<{ submission: SubmissionView }>(`/school/submissions/${submissionId}/review`, { method: "POST", body: JSON.stringify({ grade, comment, ...(scores ? { scores } : {}) }) }, token);
   }
 
   /** The teacher's students, read only. */

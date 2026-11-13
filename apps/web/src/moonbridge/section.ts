@@ -3,8 +3,9 @@ import type { Dashboard } from "../net/api.js";
 import { nextLesson, openHomework, when } from "../platform/school.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
+import { ruleCard, type Rule } from "../ui/task-panel.js";
 import { streakOf, todaysShift, type ShiftPlan } from "./daily.js";
-import type { Place, TimeOfDay } from "@moonbridge/content";
+import type { ContentBundle, Place, TimeOfDay } from "@moonbridge/content";
 import { background, playEpisode, playWelcome, residentSpeaker } from "./player.js";
 import { completeEpisode, hotelTime, hotelView, markPractice, markShift, markWelcomed, migrateState, openedUnits, studentCourse, type HotelView, type MoonbridgeState } from "./progress.js";
 import { playShift, shiftFinale } from "./shift.js";
@@ -313,6 +314,8 @@ function renderMap(
         );
       }
       room.append(list, taskWindows(b.tasks));
+      const rules = unitRules(d.learner.bundle, b.unit);
+      if (rules.length) room.append(el("div", { class: "unit-rules", "data-unit-rules": b.unit }, el("h3", {}, "Правила юнита"), ...rules.map((r) => ruleCard(r))));
     }
     return room;
   };
@@ -350,4 +353,10 @@ function renderMap(
       ...(d.feedback ? [d.feedback()] : []),
     ),
   );
+}
+
+/** The rules of a unit's topics, for its building on the map. */
+function unitRules(bundle: ContentBundle, unit: string): Rule[] {
+  const m = bundle.modules.find((x) => x.module_id === unit);
+  return (m?.concepts ?? []).filter((c) => c.explanation_ru).map((c) => ({ label: c.label, text: c.explanation_ru! }));
 }

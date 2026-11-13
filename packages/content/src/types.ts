@@ -214,6 +214,64 @@ export interface ErrorTaxonomy {
   error_types: ErrorType[];
 }
 
+/** A text page: help, FAQ or a legal document (content/school/pages/<page_id>.md). */
+export interface Page {
+  page_id: string;
+  title: string;
+  audience: "all" | "student" | "teacher";
+  /** The edition of a legal text (YYYY-MM-DD); a new one is accepted again. */
+  version?: string;
+  order?: number;
+  /** Markdown. */
+  body: string;
+}
+
+export interface RubricCriterion {
+  id: string;
+  label: string;
+  max: number;
+  hint?: string;
+}
+
+export interface Rubric {
+  rubric_id: string;
+  title: string;
+  criteria: RubricCriterion[];
+}
+
+/** A file homework of a unit: a recording or a short text the teacher grades by a rubric. */
+export interface HomeworkPrompt {
+  prompt_id: string;
+  module_id: string;
+  kind: "voice" | "writing";
+  title: string;
+  instruction_ru: string;
+  rubric_id: string;
+}
+
+export interface SurveyQuestion {
+  id: string;
+  kind: "scale" | "choice" | "text";
+  text: string;
+  options?: string[];
+  optional?: boolean;
+}
+
+export type Assessment =
+  | { assessment_id: string; kind: "test"; title: string; intro_ru?: string; pair?: string; tasks: Task[] }
+  | { assessment_id: string; kind: "survey"; title: string; intro_ru?: string; questions: SurveyQuestion[] };
+
+/** The school's own texts and forms. Optional: without them the platform has no help, no rubrics and no tests. */
+export interface SchoolContent {
+  pages: Page[];
+  rubrics: Rubric[];
+  homework_prompts: HomeworkPrompt[];
+  assessments: Assessment[];
+}
+
+/** The legal pages the platform asks students to accept. */
+export const LEGAL_PAGES = { privacy: "privacy", terms: "terms", consent: "consent", parentConsent: "parent-consent" } as const;
+
 /** A parsed content file together with where it came from, for error messages. */
 export interface SourceFile<T = unknown> {
   path: string;
@@ -232,6 +290,10 @@ export interface ContentSource {
   episodes?: SourceFile[];
   daily?: SourceFile[];
   welcome?: SourceFile[];
+  /** content/school/homework.json, content/school/assessments.json and the pages, all optional. */
+  schoolHomework?: SourceFile[];
+  assessments?: SourceFile[];
+  pages?: SourceFile[];
 }
 
 /** Validated content, flattened and indexed: this is what the platform, Moonbridge and the engine consume. */
@@ -245,4 +307,6 @@ export interface ContentBundle {
   tasks: Record<string, Task & { module_id: string }>;
   courses: Course[];
   moonbridge?: MoonbridgeContent;
+  /** Help, legal pages, file homework and tests: always from the repository, never from the content sheet. */
+  school?: SchoolContent;
 }

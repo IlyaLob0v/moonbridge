@@ -26,9 +26,9 @@ const ADMIN = "e2e-admin-token";
 const STUDENT = { name: "Анна", login: "anna.k", password: "moon-123", email: "anna.k@example.com" };
 
 /** A Moscow date-time for an <input type="datetime-local">, `days` from now at 18:00. */
-function moscowInput(days: number): string {
+function moscowInput(days: number, time = "18:00"): string {
   const d = new Date(Date.now() + 3 * 3600_000 + days * 24 * 3600_000);
-  return `${d.toISOString().slice(0, 10)}T18:00`;
+  return `${d.toISOString().slice(0, 10)}T${time}`;
 }
 
 async function main(): Promise<void> {
@@ -99,7 +99,8 @@ async function main(): Promise<void> {
     const hwForm = group.locator('[data-form="homework"]');
     await hwForm.getByLabel("Название").fill("Расскажи о себе");
     await hwForm.getByLabel("Что сделать").fill("Запиши на диктофон 30 секунд: как тебя зовут и откуда ты.");
-    await hwForm.getByLabel("Срок").fill(moscowInput(3));
+    // Due later this week (Moscow time), so the weekly report lists it on any day of the run.
+    await hwForm.getByLabel("Срок").fill(moscowInput(0, "23:00"));
     await hwForm.getByRole("button", { name: "Задать" }).click();
     await teacher.locator(".hw-item").first().waitFor();
     check(/сдали 0 из 0/.test(await teacher.locator(".hw-item").first().innerText()), "the homework waits for hand-ins");
@@ -112,10 +113,14 @@ async function main(): Promise<void> {
     const joinForm = page.locator('[data-form="join"]');
     check(/A1 вечер/.test(await joinForm.innerText()) && /Ксения/.test(await joinForm.innerText()), "the link names the group and the teacher");
     await page.screenshot({ path: `${ARTIFACTS}join.png` });
-    await joinForm.getByLabel("Имя").fill(STUDENT.name);
+    await joinForm.getByLabel("Имя", { exact: true }).fill(STUDENT.name);
     await joinForm.getByLabel("Логин").fill(STUDENT.login);
     await joinForm.getByLabel("Пароль").fill(STUDENT.password);
     await joinForm.getByLabel("E-mail", { exact: true }).fill(STUDENT.email);
+    // The documents: without the tick the form does not go.
+    await joinForm.getByRole("button", { name: "Вступить в группу" }).click();
+    check(/согласны с документами/.test(await joinForm.locator(".form-error").innerText()), "the form asks to accept the documents");
+    await joinForm.locator("[data-accept]").check();
     await joinForm.getByRole("button", { name: "Вступить в группу" }).click();
     await page.locator('[data-gate="email"]').waitFor();
     check((await page.locator('[data-card="email"]').innerText()).includes(STUDENT.email), "until she confirms her address, the platform shows only «Подтвердите почту»");
