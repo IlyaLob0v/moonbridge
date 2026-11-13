@@ -139,7 +139,15 @@ export function askTask(root: HTMLElement, task: Task, o: AskOptions = {}): Prom
  * What happened, with the author's feedback; resolves when the student continues. With `voice`,
  * the character who asked says it: their words lead, the verdict becomes a small tag.
  */
-export function showFeedback(root: HTMLElement, outcome: CheckOutcome, errorLabel?: string, task?: Task, voice?: { en: string; ru?: string }): Promise<void> {
+export function showFeedback(
+  root: HTMLElement,
+  outcome: CheckOutcome,
+  errorLabel?: string,
+  task?: Task,
+  voice?: { en: string; ru?: string },
+  /** The unit's rule for the task's topic, folded under the verdict after a mistake. */
+  rule?: Rule,
+): Promise<void> {
   return new Promise((resolve) => {
     const kind = outcome.match === "typo" ? "typo" : outcome.correct ? "right" : "wrong";
     const verdict = kind === "right" ? "Верно!" : kind === "typo" ? "Почти: опечатка" : "Не совсем";
@@ -158,10 +166,36 @@ export function showFeedback(root: HTMLElement, outcome: CheckOutcome, errorLabe
       );
       if (outcome.feedback) box.append(el("div", { class: "feedback-note" }, outcome.feedback));
       else if (errorLabel && outcome.match !== "unclassified") box.append(el("div", { class: "feedback-note" }, errorLabel));
+      if (rule && kind === "wrong") box.append(ruleCard(rule));
     }
     const next = el("button", { class: "primary", onclick: () => (root.replaceChildren(), resolve()) }, "Дальше");
     box.append(next);
     root.replaceChildren(box);
     next.focus();
   });
+}
+
+/** A topic of a unit with its explanation in Russian (module concepts, explanation_ru). */
+export interface Rule {
+  label: string;
+  text: string;
+}
+
+/** The rule folded: one tap opens it, so a quick student is not slowed down. */
+export function ruleCard(rule: Rule, open = false): HTMLElement {
+  return el(
+    "details",
+    { class: "rule-card", "data-rule": rule.label, ...(open ? { open: "" } : {}) },
+    el("summary", {}, `Правило: ${rule.label}`),
+    el("p", {}, rule.text),
+  );
+}
+
+/** The rule of a task's topic, if its unit explains it. */
+export function ruleOf(modules: { concepts: { concept_id: string; label: string; explanation_ru?: string }[] }[], conceptId: string): Rule | undefined {
+  for (const m of modules) {
+    const c = m.concepts.find((x) => x.concept_id === conceptId);
+    if (c?.explanation_ru) return { label: c.label, text: c.explanation_ru };
+  }
+  return undefined;
 }

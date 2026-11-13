@@ -461,3 +461,66 @@ body[data-section="moonbridge"][data-time="day"] { --bg: #efe2c6; background: va
 .recall button { flex: 1; padding: 11px 6px; }
 .replay-welcome { display: inline-block; margin: 4px 0 12px; color: var(--ink-dim); }
 .scene[data-welcome] .scene-title { right: 120px; }
+
+/* Help, documents and consents */
+.help-list { padding-left: 20px; }
+.help-list li { margin: 8px 0; }
+.help-link { display: inline-block; margin: 8px 4px; color: var(--ink-dim); font-size: 14px; }
+.page-body h2 { margin-top: 18px; }
+.page-body h3 { font-size: 16px; margin: 14px 0 6px; }
+.page-body blockquote { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--warn); background: rgba(224, 192, 74, 0.08); border-radius: 0 8px 8px 0; }
+.page-body ul, .page-body ol { padding-left: 22px; }
+.page-body li { margin: 4px 0; }
+.consent-fields { margin: 8px 0; }
+.consent-fields fieldset.age { border: 1px solid var(--edge); border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
+.consent-fields legend { color: var(--ink-dim); font-size: 14px; padding: 0 4px; }
+.login .consent-fields label.check, .consent-fields label.check { flex-direction: row; align-items: flex-start; gap: 10px; margin: 8px 0; }
+.consent-fields input[type="checkbox"], .consent-fields input[type="radio"] { width: 22px; height: 22px; flex: none; margin: 1px 0 0; accent-color: var(--accent); }
+.consent-fields .accept span { line-height: 1.4; }
+.parent-fields { border-left: 3px solid var(--accent); padding-left: 10px; margin: 8px 0; }
+.consent-status p { margin: 6px 0; }
+.paper-consent { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+/* Rules of a unit */
+.rule-card { margin: 10px 0 4px; border: 1px solid var(--edge); border-radius: 10px; padding: 8px 12px; background: rgba(224, 165, 74, 0.07); text-align: left; }
+.rule-card summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.rule-card p { margin: 8px 0 2px; white-space: pre-wrap; }
+.unit-rules { margin-top: 14px; }
+.unit-rules h3 { font-size: 15px; color: var(--ink-dim); margin: 0 0 4px; font-weight: normal; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Criteria of file homework */
+.rubric { border: 1px solid var(--edge); border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
+.rubric legend { color: var(--ink-dim); font-size: 14px; padding: 0 4px; }
+.criterion { margin: 8px 0; }
+.criterion p { margin: 2px 0; }
+.points { display: flex; gap: 6px; margin-top: 4px; }
+.points .point { flex: 1; padding: 8px 0; min-height: 40px; }
+.points .point[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: #1d1406; font-weight: 700; }
+.rubric-note { margin: 10px 0; }
+.rubric-note ul { padding-left: 20px; margin: 4px 0; }
+.assign-prompt { margin: 8px 0; border-top: 1px solid var(--edge); padding-top: 8px; }
+.assign-prompt summary { cursor: pointer; }
+
+/* Tests and the survey */
+.section-card.assessment-card { border-color: var(--good); background: linear-gradient(135deg, #1d3326, #1c1a2a 70%); }
+.assessment-page .test-task { margin-top: 8px; }
+.survey { display: flex; flex-direction: column; gap: 14px; }
+.survey-q { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--edge); border-radius: 10px; padding: 10px 12px; margin: 0; }
+.survey-q legend { padding: 0 4px; }
+.survey-q.scale { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.survey-q .scale-option { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 44px; }
+.survey-q label.check { display: flex; flex-direction: row; align-items: center; gap: 10px; }
+.survey-q input[type="radio"] { width: 22px; height: 22px; accent-color: var(--accent); }
+.assessment-block { border-top: 1px solid var(--edge); padding-top: 10px; margin-top: 10px; overflow-x: auto; }
+.assessment-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 6px 0; }
+.assessment-row b { flex: 1 1 140px; }
+.survey-answers { margin: 6px 0; }
+.survey-answers summary { cursor: pointer; }
+.survey-answers dt { color: var(--ink-dim); font-size: 14px; margin-top: 6px; }
+.survey-answers dd { margin: 2px 0 0; white-space: pre-wrap; }
+.assessment-block table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 6px; }
+.assessment-block th, .assessment-block td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(93, 81, 112, 0.5); }
+.assessment-block th { color: var(--ink-dim); font-weight: normal; }
+.gate-links { display: flex; gap: 16px; align-items: center; margin-top: 10px; }
+.parent-resend { margin: 10px 0; }
+.parent-resend summary { cursor: pointer; color: var(--ink-dim); }

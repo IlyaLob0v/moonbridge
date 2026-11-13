@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonbridge.example.com/schemas/assessments.schema.json",
+  "title": "Tests and surveys",
+  "description": "The entry and final tests of a course and the end-of-pilot survey. The teacher opens one for a group; each student takes it once. A test has no hints and no feedback: answers are checked on the server and only the teacher sees the result. Tasks use the same format as unit tasks, but belong to no unit and never come back in repeats.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "assessments"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": "1.0" },
+    "assessments": { "type": "array", "items": { "oneOf": [{ "$ref": "#/$defs/test" }, { "$ref": "#/$defs/survey" }] } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assessment_id", "kind", "title", "tasks"],
+      "properties": {
+        "assessment_id": { "$ref": "#/$defs/id" },
+        "kind": { "const": "test" },
+        "title": { "type": "string", "minLength": 1 },
+        "intro_ru": { "type": "string" },
+        "pair": { "$ref": "#/$defs/id", "description": "The other test of the pair (entry ↔ final): the teacher sees both scores side by side." },
+        "tasks": { "type": "array", "minItems": 1, "maxItems": 60, "items": { "$ref": "task-set.schema.json#/$defs/task" } }
+      }
+    },
+    "survey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assessment_id", "kind", "title", "questions"],
+      "properties": {
+        "assessment_id": { "$ref": "#/$defs/id" },
+        "kind": { "const": "survey" },
+        "title": { "type": "string", "minLength": 1 },
+        "intro_ru": { "type": "string" },
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "text"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "kind": { "enum": ["scale", "choice", "text"], "description": "scale: 1–5; choice: one of options; text: a free answer." },
+              "text": { "type": "string", "minLength": 1 },
+              "options": { "type": "array", "minItems": 2, "items": { "type": "string", "minLength": 1 } },
+              "optional": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

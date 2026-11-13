@@ -32,6 +32,9 @@ importers:
       '@moonbridge/content':
         specifier: workspace:*
         version: link:../../packages/content
+      '@moonbridge/learning':
+        specifier: workspace:*
+        version: link:../../packages/learning
       '@moonbridge/xapi':
         specifier: workspace:*
         version: link:../../packages/xapi

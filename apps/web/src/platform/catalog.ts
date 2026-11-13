@@ -1,3 +1,4 @@
+import type { HomeworkPrompt, Rubric } from "@moonbridge/content";
 import type { Api, CatalogUnit, Dashboard, GroupView, HomeworkView } from "../net/api.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
@@ -24,7 +25,10 @@ export async function renderCatalog(root: HTMLElement, d: CatalogDeps): Promise<
     root.replaceChildren(el("div", { class: "teacher catalog" }, head, el("p", { class: "form-error" }, "Каталог открывается только с интернетом.")));
     return;
   }
-  const [units, dash] = await Promise.all([d.api.catalog(d.token).then((r) => r.units, () => undefined), loadDashboard(d.api, d.token, d.kv).catch(() => undefined)]);
+  const [cat, dash] = await Promise.all([d.api.catalog(d.token).catch(() => undefined), loadDashboard(d.api, d.token, d.kv).catch(() => undefined)]);
+  const units = cat?.units;
+  const prompts = cat?.prompts ?? [];
+  const rubrics = cat?.rubrics ?? [];
   const now = d.now ?? new Date();
   const groups = dash?.groups ?? [];
   const search = el("input", { class: "answer", type: "search", placeholder: "Найти юнит: название или тема", "aria-label": "Поиск по каталогу" }) as HTMLInputElement;
@@ -32,7 +36,7 @@ export async function renderCatalog(root: HTMLElement, d: CatalogDeps): Promise<
   const show = () => {
     const q = search.value.trim().toLowerCase();
     const found = (units ?? []).filter((u) => !q || [u.title.ru, u.title.en, u.description ?? "", u.module_id, ...u.episodes.map((e) => e.title)].some((t) => t.toLowerCase().includes(q)));
-    list.replaceChildren(...(found.length ? found.map((u) => unitCard(u, groups, dash, now, d)) : [el("p", { class: "muted" }, units ? "Ничего не нашлось." : "Не получилось загрузить каталог.")]));
+    list.replaceChildren(...(found.length ? found.map((u) => unitCard(u, groups, dash, now, d, prompts.filter((p) => p.module_id === u.module_id), rubrics)) : [el("p", { class: "muted" }, units ? "Ничего не нашлось." : "Не получилось загрузить каталог.")]));
   };
   search.addEventListener("input", show);
   show();
@@ -57,7 +61,7 @@ function givenTo(u: CatalogUnit, dash: Dashboard | undefined, now: Date): string
     .map((h) => `${h.assignee_name ? `${h.assignee_name} (${groups.get(h.group_id) ?? ""})` : (groups.get(h.group_id) ?? "")}${h.due_at ? `, до ${when(new Date(h.due_at), now)}` : ""}`);
 }
 
-function unitCard(u: CatalogUnit, groups: GroupView[], dash: Dashboard | undefined, now: Date, d: CatalogDeps): HTMLElement {
+function unitCard(u: CatalogUnit, groups: GroupView[], dash: Dashboard | undefined, now: Date, d: CatalogDeps, prompts: HomeworkPrompt[], rubrics: Rubric[]): HTMLElement {
   const given = givenTo(u, dash, now);
   const card = el(
     "section",
@@ -72,7 +76,69 @@ function unitCard(u: CatalogUnit, groups: GroupView[], dash: Dashboard | undefin
     ...(given.length ? [el("p", { class: "muted", "data-given": String(given.length) }, `Уже задан: ${given.join("; ")}`)] : []),
   );
   if (u.episodes.length && groups.length) card.append(assignForm(u, groups, d));
+  if (prompts.length) {
+    card.append(
+      el("h3", {}, "Домашка файлом"),
+      ...prompts.map((p) => promptItem(p, rubrics.find((r) => r.rubric_id === p.rubric_id), groups, d)),
+    );
+  }
   return card;
+}
+
+const KIND: Record<HomeworkPrompt["kind"], string> = { voice: "запись голоса", writing: "короткий текст" };
+
+/** A unit's file homework: what the student does, the criteria, and the form that gives it. */
+function promptItem(p: HomeworkPrompt, rubric: Rubric | undefined, groups: GroupView[], d: CatalogDeps): HTMLElement {
+  const parts: HTMLElement[] = [
+    el("p", { class: "hw-description" }, p.instruction_ru),
+    ...(rubric ? [el("p", { class: "muted" }, `Критерии: ${rubric.criteria.map((c) => `${c.label.toLowerCase()} (до ${c.max})`).join(", ")}`)] : []),
+  ];
+  if (groups.length) {
+    const group = el("select", { class: "answer", name: "group", "aria-label": "Группа" }, ...groups.map((g) => el("option", { value: g.group_id }, g.name))) as HTMLSelectElement;
+    let who = assigneeSelect(groups[0]!);
+    const whoLabel = el("label", {}, "Кому", who);
+    group.addEventListener("change", () => {
+      const next = assigneeSelect(groups.find((g) => g.group_id === group.value)!);
+      who.replaceWith(next);
+      who = next;
+    });
+    const due = el("input", { class: "answer", type: "datetime-local", name: "due", "aria-label": "Срок" }) as HTMLInputElement;
+    const error = el("p", { class: "form-error", role: "alert" });
+    const done = el("p", { class: "sheet-ok", hidden: "" });
+    const submit = el("button", { class: "primary", type: "submit" }, "Задать") as HTMLButtonElement;
+    parts.push(
+      el(
+        "form",
+        {
+          class: "hw-form",
+          "data-form": "assign-prompt",
+          onsubmit: async (e: Event) => {
+            e.preventDefault();
+            if (!d.token) return;
+            submit.disabled = true;
+            error.textContent = "";
+            try {
+              const { homework } = await d.api.createHomework(d.token, group.value, { prompt_id: p.prompt_id, due_at: due.value ? moscowInputToIso(due.value) : null, account_id: who.value || null });
+              const g = groups.find((x) => x.group_id === group.value)!;
+              done.textContent = `Задано: ${homework.assignee_name ?? `вся группа «${g.name}»`}${homework.due_at ? `, до ${when(new Date(homework.due_at), new Date())}` : ""}.`;
+              done.hidden = false;
+            } catch (err) {
+              error.textContent = messageOf(err);
+            } finally {
+              submit.disabled = false;
+            }
+          },
+        },
+        el("label", {}, "Группа", group),
+        whoLabel,
+        el("label", {}, "Срок (по Москве)", due),
+        error,
+        done,
+        submit,
+      ),
+    );
+  }
+  return el("details", { class: "assign-prompt", "data-prompt": p.prompt_id }, el("summary", {}, `${p.title} · ${KIND[p.kind]}`), ...parts);
 }
 
 function assignForm(u: CatalogUnit, groups: GroupView[], d: CatalogDeps): HTMLElement {

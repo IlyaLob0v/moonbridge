@@ -36,6 +36,11 @@ export class MailLinks {
     return `${this.publicUrl}/email/verify?t=${token}`;
   }
 
+  /** A parent's consent for a minor: a page on the gateway with the text and a button. */
+  parentConsent(token: string): string {
+    return `${this.publicUrl}/consent/parent?t=${token}`;
+  }
+
   reset(token: string): string {
     return `${this.clientUrl}/reset/${token}`;
   }

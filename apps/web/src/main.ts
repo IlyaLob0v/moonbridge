@@ -14,6 +14,9 @@ import { openLessonFile, renderGroupLessons, renderStudentLessons } from "./plat
 import { renderMetrics } from "./platform/metrics.js";
 import { renderTeacher } from "./platform/teacher.js";
 import { renderToday } from "./platform/today.js";
+import { renderAssessment } from "./platform/assessment.js";
+import { renderConsentGate } from "./platform/consent.js";
+import { renderHelp, renderHelpPage } from "./platform/help.js";
 import { IdbJournal, IdbKeyValue, IdbOutboxStore, openPlayerDb, type KeyValue } from "./storage/idb.js";
 import { el } from "./ui/dom.js";
 import "./style.css";
@@ -43,6 +46,30 @@ function cacheLoadedAssets(): void {
 function fatal(message: string, detail?: unknown): void {
   console.error(message, detail);
   root.replaceChildren(el("div", { class: "card" }, el("h1", {}, "Не получилось открыть платформу"), el("p", {}, message)));
+}
+
+/**
+ * Help and the school's documents without an account: the sign-up form opens them in a new tab,
+ * before there is any session. Links inside go from page to page; anything else leaves to sign-in.
+ */
+async function publicHelp(api: Api): Promise<void> {
+  const back = { href: "/", label: "← Ко входу" };
+  const show = async () => {
+    const id = /^\/help\/([a-z0-9-]+)$/.exec(location.pathname)?.[1];
+    if (id) await renderHelpPage(root, id, { api, back: { href: "/help", label: "← Помощь" } });
+    else await renderHelp(root, { api, back });
+  };
+  root.addEventListener("click", (e) => {
+    const a = (e.target as Element | null)?.closest?.("a[data-link]") as HTMLAnchorElement | null;
+    if (!a) return;
+    const path = new URL(a.href).pathname;
+    if (!path.startsWith("/help")) return;
+    e.preventDefault();
+    history.pushState(null, "", path);
+    void show();
+  });
+  window.addEventListener("popstate", () => void show());
+  await show();
 }
 
 /** Fresh bundle from the gateway when it is reachable, the cached one otherwise. */
@@ -75,6 +102,7 @@ async function boot(): Promise<void> {
     await resetPassword(root, api, localSessionStorage, reset);
     history.replaceState(null, "", "/");
   }
+  if (/^\/help(\/[a-z0-9-]+)?$/.test(location.pathname) && !localSessionStorage.load()) return publicHelp(api);
   if (!localSessionStorage.load() && !location.hash.includes("session=")) {
     if ((await signIn(root, api, localSessionStorage)) === "guest") saveProfile(await askProfile(root));
   }
@@ -157,6 +185,8 @@ async function boot(): Promise<void> {
   // Until the address is confirmed (where the gateway requires it) every page is the e-mail card.
   // Checked online only, and no more once confirmed.
   let emailConfirmed = false;
+  // Likewise the school's documents (and a minor's parent consent): until then, only that card.
+  let consented = false;
   const route = async () => {
     const path = location.pathname;
     if (path !== currentPath) [previousPath, currentPath] = [currentPath, path];
@@ -169,6 +199,22 @@ async function boot(): Promise<void> {
         return renderEmailGate(root, { api, token: session.token, account: board.account, onSignOut });
       }
       if (board) emailConfirmed = true;
+    }
+    // Help stays open behind the gates: the consent card links to the documents.
+    const helpId = /^\/help\/([a-z0-9-]+)$/.exec(path)?.[1];
+    if (path === "/help" || helpId) {
+      document.body.dataset.section = "platform";
+      const role = session.account?.role;
+      const deps = { api, bundle, ...(role ? { role } : {}), back: helpId ? { href: "/help", label: "← Помощь" } : { href: "/", label: "← Сегодня" } };
+      return helpId ? renderHelpPage(root, helpId, deps) : renderHelp(root, deps);
+    }
+    if (session.kind === "account" && session.token && !consented && session.account?.role === "student") {
+      const board = await dashboard();
+      if (board?.consent?.required) {
+        document.body.dataset.section = "platform";
+        return renderConsentGate(root, { api, token: session.token, consent: board.consent, onSignOut, onDone: () => ((consented = true), void route()) });
+      }
+      if (board) consented = true;
     }
     document.body.dataset.section = path.startsWith("/moonbridge") ? "moonbridge" : "platform";
     if (path === "/moonbridge" || path.startsWith("/moonbridge/")) {
@@ -189,6 +235,8 @@ async function boot(): Promise<void> {
     moonbridge?.stopSound();
     const homeworkId = /^\/homework\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (homeworkId && session.kind === "account") return renderHomework(root, homeworkId, { api, token: session.token, kv: local, navigate });
+    const test = /^\/test\/([A-Za-z0-9_]+)\/([a-z0-9_]+)$/.exec(path);
+    if (test && session.kind === "account") return renderAssessment(root, test[1]!, test[2]!, { api, token: session.token, navigate, mediaBase });
     if (path === "/lessons" && session.kind === "account") return renderStudentLessons(root, { api, token: session.token, kv: local });
     const lessonsGroup = /^\/teacher\/lessons\/([A-Za-z0-9_]+)$/.exec(path)?.[1];
     if (lessonsGroup && session.account?.role === "teacher") return renderGroupLessons(root, lessonsGroup, { api, token: session.token });

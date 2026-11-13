@@ -1,3 +1,4 @@
+import { assessmentsSection } from "./assessment.js";
 import { ApiError, type Api, type EmailCounts, type EmailMetrics, type GroupMetrics, type Metric, type MetricStatus, type PilotMetrics } from "../net/api.js";
 import { el } from "../ui/dom.js";
 import { when } from "./school.js";
@@ -227,6 +228,7 @@ export async function renderMetrics(root: HTMLElement, groupId: string, d: Metri
     setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   });
 
+  const tests = await assessmentsSection(groupId, { api: d.api, token, rerender: () => void renderMetrics(root, groupId, d) });
   page(
     "Метрики пилота",
     el(
@@ -239,6 +241,7 @@ export async function renderMetrics(root: HTMLElement, groupId: string, d: Metri
       saveError,
     ),
     el("section", { class: "card", "data-targets": "" }, el("h2", {}, "Цели пилота"), targets(m)),
+    ...(tests ? [tests] : []),
     el("section", { class: "card" }, el("h2", {}, "По неделям"), weekList(m, m.students.length)),
     el("section", { class: "card" }, el("h2", {}, "Ученики"), studentList(m)),
     el("section", { class: "card" }, el("h2", {}, "Точность по типам ошибок"), errorTrends(m)),

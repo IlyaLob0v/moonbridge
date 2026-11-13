@@ -7,6 +7,8 @@ import { sheetRoutes } from "../content/routes.js";
 import type { ServerConfig } from "../config.js";
 import type { Session, SessionTokens } from "../session.js";
 import { ACCOUNTS_PER_EMAIL, EMAIL, EMAIL_TAKEN, emailRoutes, normalizeEmail, sendVerification, type MailDeps } from "./email-routes.js";
+import { assessmentRoutes, studentAssessments } from "./assessments.js";
+import { consentRoutes, Consents } from "./consents.js";
 import { financeRoutes } from "./finance-routes.js";
 import { FileTooLargeError, type FileStore } from "./files.js";
 import { dashboardLessons, lessonRoutes, weekAttendance, type LessonBilling } from "./lessons.js";
@@ -14,7 +16,7 @@ import { FailureLimiter } from "./limits.js";
 import { emailMetrics, pilotMetrics } from "./metrics.js";
 import { DUMMY_HASH, hashPassword, verifyPassword } from "./passwords.js";
 import { catalog, suggestedGrade, unitEpisodes, unitProgress } from "./units.js";
-import { LoginTakenError, type Account, type Feedback, type Group, type Homework, type PracticeSummary, type SchoolStore, type Submission } from "./store.js";
+import { LoginTakenError, type Account, type Feedback, type Group, type Homework, type HomeworkRubric, type PracticeSummary, type SchoolStore, type Submission } from "./store.js";
 
 export interface SchoolDeps {
   config: ServerConfig;
@@ -120,6 +122,13 @@ interface NewAccountBody {
   password: string;
   email?: string;
 }
+/** The sign-up's consent fields: the tick, and for a student under 18 the parent. */
+interface JoinConsent {
+  accept_terms?: boolean;
+  minor?: boolean;
+  parent_name?: string;
+  parent_email?: string;
+}
 interface GroupBody {
   name?: string;
   call_url?: string | null;
@@ -131,6 +140,8 @@ const baseAccountView = (a: Account) => ({ id: a.accountId, name: a.name, role: 
 
 /** What an account with an unconfirmed address may still do: see who it is, and give or confirm the address. */
 const UNVERIFIED_ALLOWED = new Set(["/school/dashboard", "/account/email", "/account/email/resend", "/account/reminders"]);
+/** What a student without the needed consents may still do: the consent card itself, and the e-mail card. */
+const UNCONSENTED_ALLOWED = new Set([...UNVERIFIED_ALLOWED, "/account/consent", "/feedback"]);
 const submissionView = (s: Submission) => ({
   submission_id: s.submissionId,
   account_id: s.accountId,
@@ -141,7 +152,7 @@ const submissionView = (s: Submission) => ({
   // A unit's result: right on the first try out of all tasks, and the grade that suggests.
   score: s.score ? { right: s.score.right, total: s.score.total, suggested_grade: suggestedGrade(s.score.right, s.score.total) } : null,
   submitted_at: s.submittedAt.toISOString(),
-  review: s.review ? { grade: s.review.grade, comment: s.review.comment, reviewed_at: s.review.reviewedAt.toISOString() } : null,
+  review: s.review ? { grade: s.review.grade, comment: s.review.comment, reviewed_at: s.review.reviewedAt.toISOString(), ...(s.review.scores ? { scores: s.review.scores } : {}) } : null,
 });
 const homeworkView = (h: Homework) => ({
   homework_id: h.homeworkId,
@@ -154,6 +165,7 @@ const homeworkView = (h: Homework) => ({
   account_id: h.accountId,
   assignee_name: h.assigneeName,
   auto_grade: h.autoGrade,
+  rubric: h.rubric,
   created_at: h.createdAt.toISOString(),
 });
 /** Homework a student still owes: a file not handed in, or a unit not played through. */
@@ -180,6 +192,16 @@ const groupView = (g: Group) => ({ group_id: g.groupId, name: g.name, teacher_na
  */
 export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise<void> {
   const now = d.now ?? (() => new Date());
+  const liveBundle = () => d.content?.live.bundle;
+  const consents = new Consents({
+    school: d.school,
+    ...(d.mail ? { mail: d.mail } : {}),
+    bundle: liveBundle,
+    enabled: d.config.consent,
+    now,
+    requireAccount: (req, reply) => requireAccount(req, reply),
+    requireTeacher: (req, reply) => requireTeacher(req, reply),
+  });
   /** With `email_required` the platform shows only "Подтвердите почту" until `email_verified`. */
   const accountView = (a: Account) => ({ ...baseAccountView(a), ...(d.mail?.verification ? { email_required: true } : {}) });
 
@@ -196,6 +218,9 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     req.account = account;
     if (d.mail?.verification && !account.emailVerified && !UNVERIFIED_ALLOWED.has(req.routeOptions.url ?? "")) {
       return reply.code(403).send({ error: "email_unverified", message: "Подтвердите почту: откройте письмо и нажмите «Подтвердить почту»." });
+    }
+    if (!UNCONSENTED_ALLOWED.has(req.routeOptions.url ?? "") && (await consents.blocks(account))) {
+      return reply.code(403).send({ error: "consent_required", message: "Сначала примите документы школы на экране «Сегодня»." });
     }
   };
 
@@ -227,6 +252,8 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     }
     return g;
   };
+
+  await assessmentRoutes(app, { school: d.school, bundle: liveBundle, now, requireAccount, requireTeacher, ownGroup });
 
   const signIn = async (a: Account) => {
     const session: Session = { playerId: a.playerId, registration: crypto.randomUUID(), account: { id: a.accountId, role: a.role } };
@@ -265,9 +292,10 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     }
   };
 
-  app.get("/auth/options", async () => ({ guest: d.config.allowGuest, password_reset: Boolean(d.mail) }));
+  app.get("/auth/options", async () => ({ guest: d.config.allowGuest, password_reset: Boolean(d.mail), consent: consents.active }));
 
   if (d.mail) await emailRoutes(app, { school: d.school, mail: d.mail, now, requireAccount, signIn, accountView });
+  await consentRoutes(app, consents, { school: d.school, ...(d.mail ? { mail: d.mail } : {}), bundle: liveBundle, enabled: d.config.consent, now, requireAccount, requireTeacher });
 
   /** Teachers are created by whoever runs the school (ADMIN_TOKEN); students come through invitations. */
   app.post<{ Body: NewAccountBody }>("/admin/teachers", { schema: { body: newAccount } }, async (req, reply) => {
@@ -326,7 +354,7 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
    * A guest who has been playing on this phone keeps their progress: the account takes over
    * the guest's player id.
    */
-  app.post<{ Params: { code: string }; Body: Partial<NewAccountBody> | undefined }>("/invites/:code/join", async (req, reply) => {
+  app.post<{ Params: { code: string }; Body: (Partial<NewAccountBody> & JoinConsent) | undefined }>("/invites/:code/join", async (req, reply) => {
     const g = await d.school.invite(req.params.code, now());
     if (!g) return reply.code(404).send({ error: "invite", message: "Приглашение не найдено или устарело" });
     const session = await sessionOf(req);
@@ -339,12 +367,24 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
         typeof body.login === "string" && typeof body.password === "string" && body.password.length >= 6 && body.password.length <= 128 &&
         (body.email === undefined || (typeof body.email === "string" && body.email.length <= 254));
       if (!valid) return reply.code(400).send({ error: "fields", message: "Нужны имя, логин и пароль не короче 6 символов" });
+      // The documents are accepted with the account, not after: nobody studies without them.
+      if (consents.active && body.accept_terms !== true) return reply.code(400).send({ error: "accept", message: "Отметьте, что согласны с договором и политикой обработки данных" });
+      if (consents.active && body.minor === true && (typeof body.parent_name !== "string" || !body.parent_name.trim() || typeof body.parent_email !== "string" || !EMAIL.test(normalizeEmail(body.parent_email)))) {
+        return reply.code(400).send({ error: "parent", message: "Укажите имя и почту родителя: ему придёт письмо для согласия" });
+      }
       const wait = newAccounts.retryAfter(req.ip);
       if (wait) return reply.code(429).header("Retry-After", String(wait)).send({ error: "too_many", message: `Слишком много новых аккаунтов. Попробуйте через ${Math.ceil(wait / 60)} мин.` });
       newAccounts.fail(req.ip);
       const guest = session && !session.account && !session.lti && !(await d.school.playerTaken(session.playerId)) ? session.playerId : undefined;
       account = await createAccount("student", body as NewAccountBody, reply, guest);
       if (!account) return;
+      if (consents.active) {
+        await consents.acceptTerms(account, req);
+        if (body.minor === true) {
+          const problem = await consents.askParent(account, { name: body.parent_name, email: body.parent_email }, req.log);
+          if (problem) req.log.warn({ account: account.accountId, problem }, "parent consent not asked at sign-up");
+        }
+      }
     }
     await d.school.join(g.groupId, account.accountId);
     return reply.code(201).send({ ...(await signIn(account)), group: groupView(g) });
@@ -367,8 +407,11 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     }
     const mine = await d.school.submissionsFor(ids, a.accountId);
     const bundle = d.content?.live.bundle;
+    const consent = await consents.view(a);
     return {
       account: accountView(a),
+      ...(consent ? { consent } : {}),
+      assessments: await studentAssessments(d.school, bundle, a, groups),
       groups: groups.map(groupView),
       homework: await Promise.all(
         homework.map(async (h) => {
@@ -423,10 +466,13 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     const to = new Date(from.getTime() + 7 * DAY_MS);
     const homework = await d.school.homeworkOf([g.groupId]);
     const handedIn = await d.school.submissionsFor(homework.map((h) => h.homeworkId));
+    const members = await d.school.members(g.groupId);
+    const consentOf = new Map(await Promise.all(members.map(async (m) => [m.accountId, await consents.view(m)] as const)));
     const students = await Promise.all(
-      (await d.school.members(g.groupId)).map(async (m) => ({
+      members.map(async (m) => ({
         id: m.accountId,
         name: m.name,
+        ...(consentOf.get(m.accountId) ? { consent: { required: consentOf.get(m.accountId)!.required, minor: consentOf.get(m.accountId)!.minor, parent: consentOf.get(m.accountId)!.parent } } : {}),
         week: practiceView(await d.school.practice(m.playerId, from, to)),
         homework_open: homework.filter((h) => owes(h, handedIn, m.accountId)).length,
         lessons: await weekAttendance(d.school, m, [g], from, to, now()).then(({ held, present, absent }) => ({ held, present, absent })),
@@ -454,8 +500,10 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
     });
     const mine = await d.school.submissionsFor(homework.map((h) => h.homeworkId), student.accountId);
     const previous = practiceView(await d.school.practice(student.playerId, before, from));
+    const consent = await consents.view(student);
     return {
       student: { id: student.accountId, name: student.name },
+      ...(consent ? { consent } : {}),
       week: { from: moscowDate(from), to: moscowDate(new Date(to.getTime() - DAY_MS)) },
       practice: practiceView(await d.school.practice(student.playerId, from, to)),
       previous: { days: previous.days.length, accuracy: previous.accuracy },
@@ -470,10 +518,10 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
   app.get("/school/review-queue", { preHandler: requireTeacher }, async (req) => {
     const queue = await d.school.reviewQueue(req.account!.accountId);
     const homework = new Map((await Promise.all([...new Set(queue.map((s) => s.homeworkId))].map((id) => d.school.homework(id)))).filter((h): h is Homework => !!h).map((h) => [h.homeworkId, h]));
-    return { submissions: queue.map((s) => ({ ...submissionView(s), homework_title: homework.get(s.homeworkId)?.title ?? "" })) };
+    return { submissions: queue.map((s) => ({ ...submissionView(s), homework_title: homework.get(s.homeworkId)?.title ?? "", homework_rubric: homework.get(s.homeworkId)?.rubric ?? null })) };
   });
 
-  app.post<{ Params: { id: string }; Body: { grade: number; comment?: string } }>(
+  app.post<{ Params: { id: string }; Body: { grade: number; comment?: string; scores?: Record<string, number> } }>(
     "/school/submissions/:id/review",
     {
       preHandler: requireTeacher,
@@ -482,7 +530,11 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
           type: "object",
           required: ["grade"],
           additionalProperties: false,
-          properties: { grade: { type: "integer", minimum: 1, maximum: 5 }, comment: { type: "string", maxLength: 4000 } },
+          properties: {
+            grade: { type: "integer", minimum: 1, maximum: 5 },
+            comment: { type: "string", maxLength: 4000 },
+            scores: { type: "object", maxProperties: 8, additionalProperties: { type: "integer", minimum: 0, maximum: 10 } },
+          },
         },
       },
     },
@@ -490,7 +542,19 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
       const s = await visibleSubmission(req.params.id, req.account!);
       // Only the group's teacher reviews; the student who sent the file may see it but not grade it.
       if (!s || s.accountId === req.account!.accountId) return reply.code(404).send({ error: "not found" });
-      const reviewed = await d.school.review(s.submissionId, req.body.grade, (req.body.comment ?? "").trim(), now());
+      // Points only for the homework's own criteria, each within its maximum.
+      const rubric = (await d.school.homework(s.homeworkId))?.rubric;
+      let scores: Record<string, number> | null = null;
+      if (req.body.scores && rubric) {
+        scores = {};
+        for (const c of rubric.criteria) {
+          const v = req.body.scores[c.id];
+          if (v === undefined) continue;
+          if (v > c.max) return reply.code(400).send({ error: "scores", message: `«${c.label}»: не больше ${c.max}` });
+          scores[c.id] = v;
+        }
+      }
+      const reviewed = await d.school.review(s.submissionId, req.body.grade, (req.body.comment ?? "").trim(), now(), scores);
       return { submission: submissionView(reviewed!) };
     },
   );
@@ -618,7 +682,12 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
   /** The lesson catalog: every unit of the live content in course order, with the episodes the student would play. */
   app.get("/school/catalog", { preHandler: requireTeacher }, async () => {
     const bundle = d.content?.live.bundle;
-    return { units: bundle ? catalog(bundle) : [] };
+    return {
+      units: bundle ? catalog(bundle) : [],
+      // File homework of the units, and the criteria for the teacher's own.
+      prompts: bundle?.school?.homework_prompts ?? [],
+      rubrics: bundle?.school?.rubrics ?? [],
+    };
   });
 
   /**
@@ -628,7 +697,19 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
    */
   app.post<{
     Params: { id: string };
-    Body: { title?: string; description?: string; due_at?: string | null; needs_file?: boolean; module_id?: string | null; account_id?: string | null; auto_grade?: boolean };
+    Body: {
+      title?: string;
+      description?: string;
+      due_at?: string | null;
+      needs_file?: boolean;
+      module_id?: string | null;
+      account_id?: string | null;
+      auto_grade?: boolean;
+      /** A file homework of a unit from the content: its title, text and rubric. */
+      prompt_id?: string;
+      /** A rubric from the content for the teacher's own file homework. */
+      rubric_id?: string | null;
+    };
   }>(
     "/school/groups/:id/homework",
     {
@@ -645,13 +726,24 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
             module_id: { anyOf: [{ type: "string", maxLength: 120 }, { type: "null" }] },
             account_id: { anyOf: [{ type: "string", maxLength: 64 }, { type: "null" }] },
             auto_grade: { type: "boolean" },
+            prompt_id: { type: "string", maxLength: 80 },
+            rubric_id: { anyOf: [{ type: "string", maxLength: 80 }, { type: "null" }] },
           },
         },
       },
     },
     async (req, reply) => {
       if (!(await ownGroup(req, reply))) return;
-      const b = req.body;
+      const school = d.content?.live.bundle.school;
+      // A prompt fills in what the teacher left empty and makes it a file homework with criteria.
+      const prompt = req.body.prompt_id ? school?.homework_prompts.find((p) => p.prompt_id === req.body.prompt_id) : undefined;
+      if (req.body.prompt_id && !prompt) return reply.code(404).send({ error: "prompt", message: "Такого задания нет в контенте" });
+      const b = prompt
+        ? { ...req.body, module_id: null, needs_file: true, title: req.body.title?.trim() || prompt.title, description: req.body.description?.trim() || prompt.instruction_ru, rubric_id: prompt.rubric_id }
+        : req.body;
+      const rubricSource = b.rubric_id ? school?.rubrics.find((r) => r.rubric_id === b.rubric_id) : undefined;
+      if (b.rubric_id && !rubricSource) return reply.code(404).send({ error: "rubric", message: "Таких критериев нет в контенте" });
+      const rubric: HomeworkRubric | null = rubricSource ? { title: rubricSource.title, criteria: rubricSource.criteria.map((c) => ({ ...c })) } : null;
       // The body schema turns a null into "" for these: both mean "none".
       const moduleId = b.module_id || null;
       const accountId = b.account_id || null;
@@ -675,6 +767,8 @@ export async function schoolRoutes(app: FastifyInstance, d: SchoolDeps): Promise
         moduleId,
         accountId,
         autoGrade: !!moduleId && b.auto_grade === true,
+        // Criteria grade a file; a unit has its score instead.
+        rubric: !moduleId && b.needs_file === true ? rubric : null,
         createdAt: now(),
       });
       return reply.code(201).send({ homework: homeworkView(h) });

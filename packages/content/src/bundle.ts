@@ -34,6 +34,7 @@ export function buildBundle(content: ValidatedContent, builtAt = new Date()): Co
           },
         }
       : {}),
+    ...(content.school ? { school: content.school } : {}),
   };
   const content_hash = createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
   return { bundle_schema_version: "2.0", content_hash, built_at: builtAt.toISOString(), ...body };

@@ -1,5 +1,7 @@
 import type { Attempt, EpisodeResult } from "@moonbridge/xapi";
 import type { Sql } from "../db/sql.js";
+import { AssessmentStore } from "./assessment-store.js";
+import { ConsentStore } from "./consent-store.js";
 import { FinanceStore } from "./finance.js";
 import { LessonStore } from "./lesson-store.js";
 import type { MetricAttempt } from "./metrics.js";
@@ -57,7 +59,14 @@ export interface Homework {
   assigneeName: string | null;
   /** A unit's result becomes the grade without the teacher. */
   autoGrade: boolean;
+  /** The criteria a file is graded by, copied from the content when the homework was given. */
+  rubric: HomeworkRubric | null;
   createdAt: Date;
+}
+
+export interface HomeworkRubric {
+  title: string;
+  criteria: { id: string; label: string; max: number; hint?: string }[];
 }
 
 export interface Submission {
@@ -80,6 +89,8 @@ export interface Review {
   grade: number;
   comment: string;
   reviewedAt: Date;
+  /** Points per criterion of the homework's rubric. */
+  scores: Record<string, number> | null;
 }
 
 /** One student's answers in a time window, summed up for the teacher. */
@@ -121,9 +132,9 @@ function newId(prefix: string, length = 16): string {
 const ACCOUNT = "a.account_id, a.role, a.name, a.login, a.player_id, a.email, a.reminders, a.email_verified_at IS NOT NULL AS email_verified";
 const GROUP = "g.group_id, g.teacher_id, t.name AS teacher_name, g.name, g.call_url, g.schedule, g.unit_access";
 const HOMEWORK =
-  "h.homework_id, h.group_id, h.title, h.description, h.due_at, h.needs_file, h.module_id, h.account_id, (SELECT x.name FROM accounts x WHERE x.account_id = h.account_id) AS assignee_name, h.auto_grade, h.created_at";
+  "h.homework_id, h.group_id, h.title, h.description, h.due_at, h.needs_file, h.module_id, h.account_id, (SELECT x.name FROM accounts x WHERE x.account_id = h.account_id) AS assignee_name, h.auto_grade, h.rubric, h.created_at";
 const SUBMISSION =
-  "s.submission_id, s.homework_id, s.account_id, a.name AS student_name, s.file_key, s.file_name, s.mime, s.size, s.score_right, s.score_total, s.submitted_at, s.grade, s.teacher_comment, s.reviewed_at";
+  "s.submission_id, s.homework_id, s.account_id, a.name AS student_name, s.file_key, s.file_name, s.mime, s.size, s.score_right, s.score_total, s.submitted_at, s.grade, s.teacher_comment, s.reviewed_at, s.rubric_scores";
 
 interface AccountRow {
   account_id: string;
@@ -155,6 +166,7 @@ interface HomeworkRow {
   account_id: string | null;
   assignee_name: string | null;
   auto_grade: boolean;
+  rubric: HomeworkRubric | null;
   created_at: Date;
 }
 interface SubmissionRow {
@@ -172,6 +184,7 @@ interface SubmissionRow {
   grade: number | null;
   teacher_comment: string | null;
   reviewed_at: Date | null;
+  rubric_scores: Record<string, number> | null;
 }
 
 const account = (r: AccountRow): Account => ({
@@ -204,6 +217,7 @@ const homework = (r: HomeworkRow): Homework => ({
   accountId: r.account_id,
   assigneeName: r.assignee_name,
   autoGrade: r.auto_grade,
+  rubric: r.rubric ?? null,
   createdAt: r.created_at,
 });
 const submission = (r: SubmissionRow): Submission => ({
@@ -217,7 +231,7 @@ const submission = (r: SubmissionRow): Submission => ({
   size: r.size === null ? null : Number(r.size),
   score: r.score_right !== null && r.score_total !== null ? { right: r.score_right, total: r.score_total } : null,
   submittedAt: r.submitted_at,
-  review: r.reviewed_at && r.grade !== null ? { grade: r.grade, comment: r.teacher_comment ?? "", reviewedAt: r.reviewed_at } : null,
+  review: r.reviewed_at && r.grade !== null ? { grade: r.grade, comment: r.teacher_comment ?? "", reviewedAt: r.reviewed_at, scores: r.rubric_scores ?? null } : null,
 });
 
 /**
@@ -229,10 +243,16 @@ export class SchoolStore {
   readonly finance: FinanceStore;
   /** Lessons and attendance (school/lesson-store.ts). */
   readonly lessons: LessonStore;
+  /** Consents to the legal texts, a parent's for a minor (school/consent-store.ts). */
+  readonly consents: ConsentStore;
+  /** Entry and final tests and the survey (school/assessment-store.ts). */
+  readonly assessments: AssessmentStore;
 
   constructor(private readonly sql: Sql) {
     this.finance = new FinanceStore(sql);
     this.lessons = new LessonStore(sql);
+    this.consents = new ConsentStore(sql);
+    this.assessments = new AssessmentStore(sql);
   }
 
   async createAccount(a: {
@@ -363,14 +383,15 @@ export class SchoolStore {
     moduleId?: string | null;
     accountId?: string | null;
     autoGrade?: boolean;
+    rubric?: HomeworkRubric | null;
     /** A unit counts the episodes played from this moment on. */
     createdAt?: Date;
   }): Promise<Homework> {
     const homeworkId = newId("hw", 12);
     await this.sql.query(
-      `INSERT INTO homework (homework_id, group_id, title, description, due_at, needs_file, module_id, account_id, auto_grade, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, now()))`,
-      [homeworkId, h.groupId, h.title, h.description, h.dueAt, h.needsFile, h.moduleId ?? null, h.accountId ?? null, h.autoGrade ?? false, h.createdAt ?? null],
+      `INSERT INTO homework (homework_id, group_id, title, description, due_at, needs_file, module_id, account_id, auto_grade, created_at, rubric)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, now()), $11::jsonb)`,
+      [homeworkId, h.groupId, h.title, h.description, h.dueAt, h.needsFile, h.moduleId ?? null, h.accountId ?? null, h.autoGrade ?? false, h.createdAt ?? null, h.rubric ? JSON.stringify(h.rubric) : null],
     );
     return (await this.homework(homeworkId))!;
   }
@@ -401,7 +422,7 @@ export class SchoolStore {
       `INSERT INTO submissions (submission_id, homework_id, account_id, file_key, file_name, mime, size) VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (homework_id, account_id) DO UPDATE SET
          file_key = EXCLUDED.file_key, file_name = EXCLUDED.file_name, mime = EXCLUDED.mime, size = EXCLUDED.size, submitted_at = now(),
-         grade = NULL, teacher_comment = NULL, reviewed_at = NULL
+         grade = NULL, teacher_comment = NULL, reviewed_at = NULL, rubric_scores = NULL
        RETURNING submission_id`,
       [newId("sub", 12), s.homeworkId, s.accountId, s.fileKey, s.fileName, s.mime, s.size],
     );
@@ -453,8 +474,14 @@ export class SchoolStore {
     return rows.map(submission);
   }
 
-  async review(submissionId: string, grade: number, comment: string, at: Date): Promise<Submission | undefined> {
-    await this.sql.query("UPDATE submissions SET grade = $2, teacher_comment = $3, reviewed_at = $4 WHERE submission_id = $1", [submissionId, grade, comment, at]);
+  async review(submissionId: string, grade: number, comment: string, at: Date, scores?: Record<string, number> | null): Promise<Submission | undefined> {
+    await this.sql.query("UPDATE submissions SET grade = $2, teacher_comment = $3, reviewed_at = $4, rubric_scores = $5::jsonb WHERE submission_id = $1", [
+      submissionId,
+      grade,
+      comment,
+      at,
+      scores ? JSON.stringify(scores) : null,
+    ]);
     return this.submission(submissionId);
   }
 

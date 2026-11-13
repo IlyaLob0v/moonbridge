@@ -7,6 +7,8 @@ import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
 import { toMark } from "./lessons.js";
 import { myWeekCard } from "./report.js";
+import { assessmentCards } from "./assessment.js";
+import { helpLink } from "./help.js";
 import { studentCards } from "./school.js";
 
 export interface Profile {
@@ -85,6 +87,8 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
     if (firstVisit) cards.splice(askEmail ? 1 : 0, 0, moonbridgeCard);
     else cards.push(moonbridgeCard);
   }
+  // An open test goes before the hotel: it is a one-off, the hotel is every day.
+  if (d.school?.role === "student") cards.splice(askEmail ? 1 : 0, 0, ...assessmentCards(d.school.dashboard?.assessments));
   if (d.school?.role === "student" && d.school.dashboard) cards.push(...studentCards(d.school.dashboard, now));
   if (d.school?.week) cards.push(myWeekCard(d.school.week));
   cards.push(
@@ -108,6 +112,7 @@ export async function renderToday(root: HTMLElement, d: TodayDeps): Promise<void
       ...cards,
       ...(d.school?.email && !askEmail ? [d.school.email] : []),
       ...(d.school?.feedback ? [d.school.feedback] : []),
+      helpLink(),
       ...(d.school ? [el("button", { class: "link sign-out", type: "button", onclick: d.school.onSignOut }, "Выйти")] : []),
     ),
   );

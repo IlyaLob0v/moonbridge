@@ -100,7 +100,7 @@ describe("accounts", () => {
 
   it("tells the client whether guests may play", async () => {
     const app = await school();
-    expect((await app.inject({ url: "/auth/options" })).json()).toEqual({ guest: true, password_reset: false });
+    expect((await app.inject({ url: "/auth/options" })).json()).toEqual({ guest: true, password_reset: false, consent: false });
   });
 });
 

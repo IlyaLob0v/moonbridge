@@ -1,5 +1,6 @@
 import { accountSession, ApiError, DEFAULT_XAPI_BASE_IRI, type Api, type SessionStorage } from "../net/api.js";
 import { el } from "../ui/dom.js";
+import { consentFields, type ConsentFields } from "./consent.js";
 import type { Profile } from "./today.js";
 
 const KEY = "moonbridge.profile";
@@ -128,6 +129,7 @@ export async function signIn(root: HTMLElement, api: Api, store: SessionStorage,
           ]
         : []),
       el("p", { class: "muted" }, "Впервые здесь? Откройте ссылку-приглашение от преподавателя."),
+      el("a", { href: "/help", target: "_blank", rel: "noopener", class: "link", "data-help-link": "" }, "Помощь и документы"),
       ...(options.guest ? [el("button", { class: "link", type: "button", "data-guest": "", onclick: () => resolve("guest") }, "Попробовать без аккаунта")] : []),
     );
     root.replaceChildren(form);
@@ -160,6 +162,14 @@ export async function joinGroup(root: HTMLElement, api: Api, store: SessionStora
     );
     return;
   }
+  // Where the school asks for consents, the form carries the tick and the age question.
+  const options = await api.authOptions().catch(() => ({ guest: false, consent: false }));
+  const documents = options.consent
+    ? await api.pages().then(
+        (r) => r.pages.filter((p) => ["terms", "privacy", "consent"].includes(p.page_id)).map((p) => ({ page_id: p.page_id, title: p.title })),
+        () => [{ page_id: "terms", title: "Договор-оферта" }, { page_id: "privacy", title: "Политика обработки данных" }, { page_id: "consent", title: "Согласие на обработку данных" }],
+      )
+    : undefined;
   const head = [
     el("div", { class: "brand" }, "Школа английского"),
     el("h1", {}, `Группа «${invite.group.name}»`),
@@ -193,6 +203,7 @@ export async function joinGroup(root: HTMLElement, api: Api, store: SessionStora
       if (!email.input.value && /@/.test(login.input.value)) email.input.value = login.input.value.trim();
     });
     const submit = el("button", { class: "primary", type: "submit" }, "Вступить в группу") as HTMLButtonElement;
+    const consent: ConsentFields | undefined = documents ? consentFields(documents) : undefined;
     const form = el(
       "form",
       {
@@ -200,13 +211,31 @@ export async function joinGroup(root: HTMLElement, api: Api, store: SessionStora
         "data-form": "join",
         onsubmit: async (e: Event) => {
           e.preventDefault();
+          const problem = consent?.problem();
+          error.textContent = problem ?? "";
+          if (problem) return;
           submit.disabled = true;
-          error.textContent = "";
           try {
             // A guest session on this phone goes along, so the gateway can move its progress.
             // Guest tokens expire within hours; a fresh one keeps the same player id.
             const guestToken = stored?.kind === "guest" ? ((await api.guest(stored.playerId).catch(() => undefined))?.token ?? stored.token) : undefined;
-            const s = await api.join(code, { name: name.input.value.trim(), login: login.input.value, password: password.input.value, email: email.input.value.trim() }, guestToken);
+            const s = await api.join(
+              code,
+              {
+                name: name.input.value.trim(),
+                login: login.input.value,
+                password: password.input.value,
+                email: email.input.value.trim(),
+                ...(consent
+                  ? {
+                      accept_terms: consent.accept.checked,
+                      minor: consent.minor(),
+                      ...(consent.minor() ? { parent_name: consent.parentName.value.trim(), parent_email: consent.parentEmail.value.trim() } : {}),
+                    }
+                  : {}),
+              },
+              guestToken,
+            );
             store.save(accountSession(s, await xapiBase(api, s.token)));
             resolve();
           } catch (err) {
@@ -221,6 +250,7 @@ export async function joinGroup(root: HTMLElement, api: Api, store: SessionStora
       password.label,
       email.label,
       el("p", { class: "muted" }, "С этим логином и паролем вы войдёте с любого телефона, и прогресс будет на месте. На почту придут напоминания и ссылка, если забудете пароль."),
+      ...(consent ? [consent.block] : []),
       error,
       submit,
     );

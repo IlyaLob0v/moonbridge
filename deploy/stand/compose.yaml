@@ -70,6 +70,7 @@ services:
       MAIL_FROM: ${MAIL_FROM:-}
       REMINDER_EVENING_HOUR: ${REMINDER_EVENING_HOUR:-19}
       EMAIL_VERIFICATION: ${EMAIL_VERIFICATION:-}
+      CONSENT: ${CONSENT:-}
 
   web:
     build:

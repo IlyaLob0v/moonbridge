@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonbridge.example.com/schemas/page.schema.json",
+  "title": "School page",
+  "description": "A text page of the platform: help for students and teachers, FAQ, and the legal documents (privacy policy, offer, consents). Written as Markdown in content/school/pages/<page_id>.md with a short header between --- lines; the loader turns the file into this object. A legal page has a version: when it changes, students accept the new text on their next visit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["page_id", "title", "audience", "body"],
+  "properties": {
+    "page_id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "title": { "type": "string", "minLength": 1 },
+    "audience": { "enum": ["all", "student", "teacher"], "description": "Who finds the page in help. Legal pages are for all." },
+    "version": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "The date of the text's edition. Required for legal pages." },
+    "order": { "type": "integer", "minimum": 0, "description": "Place in the help list; lower comes first." },
+    "body": { "type": "string", "minLength": 1, "description": "Markdown: # headings, paragraphs, - lists, **bold**, [links](/help/faq)." }
+  }
+}

@@ -349,7 +349,7 @@ describe("forgotten password", () => {
     const app = await school();
     const { code } = await setup(app);
     await enrol(app, code, { login: "anna", email: "anna@mail.ru" });
-    expect((await app.inject({ url: "/auth/options" })).json()).toEqual({ guest: true, password_reset: true });
+    expect((await app.inject({ url: "/auth/options" })).json()).toEqual({ guest: true, password_reset: true, consent: false });
 
     const asked = await app.inject({ method: "POST", url: "/auth/forgot", payload: { login: "Anna@Mail.ru" } });
     expect(asked.statusCode).toBe(200);

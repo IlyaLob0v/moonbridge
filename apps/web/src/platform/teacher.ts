@@ -1,4 +1,5 @@
-import { ApiError, type Api, type Dashboard, type GroupProgress, type GroupView, type HomeworkView, type QueueItem, type SlotView } from "../net/api.js";
+import type { Rubric } from "@moonbridge/content";
+import { ApiError, type Api, type Dashboard, type GroupProgress, type GroupView, type HomeworkView, type QueueItem, type RubricView, type SlotView } from "../net/api.js";
 import type { KeyValue } from "../storage/idb.js";
 import { el } from "../ui/dom.js";
 import { toMark } from "./lessons.js";
@@ -37,12 +38,14 @@ export async function renderTeacher(root: HTMLElement, d: TeacherDeps): Promise<
   const rerender = () => void renderTeacher(root, d);
   const groups = dash?.groups ?? [];
   // Online only: the queue and the students' week are not kept on the device.
-  const [queue, progress] = d.token
+  const [queue, progress, rubrics] = d.token
     ? await Promise.all([
         d.api.reviewQueue(d.token).then((r) => r.submissions, () => undefined),
         Promise.all(groups.map((g) => d.api.groupProgress(d.token!, g.group_id).catch(() => undefined))),
+        // The criteria a teacher may put on their own file homework.
+        d.api.catalog(d.token).then((r) => r.rubrics ?? [], () => [] as Rubric[]),
       ])
-    : [undefined, []];
+    : [undefined, [], [] as Rubric[]];
   root.replaceChildren(
     el(
       "div",
@@ -50,7 +53,7 @@ export async function renderTeacher(root: HTMLElement, d: TeacherDeps): Promise<
       el("header", { class: "section-head" }, el("a", { href: "/", "data-link": "", class: "back" }, "← Сегодня"), el("h1", {}, "Кабинет преподавателя")),
       ...(d.token ? [] : [el("p", { class: "form-error" }, "Нет связи с сервером: показано то, что было при последнем входе.")]),
       ...(queue ? [reviewQueue(queue, d, rerender)] : []),
-      ...groups.map((g, i) => groupCard(g, dash!, progress[i], now, d, rerender)),
+      ...groups.map((g, i) => groupCard(g, dash!, progress[i], now, d, rerender, rubrics)),
       newGroupForm(d, rerender, groups.length === 0),
       el(
         "section",
@@ -63,6 +66,12 @@ export async function renderTeacher(root: HTMLElement, d: TeacherDeps): Promise<
         { class: "card content-link" },
         el("div", {}, el("h2", {}, "Каталог уроков"), el("p", { class: "muted" }, "Юниты Moonbridge: задать группе или ученику как домашку со сроком.")),
         el("a", { class: "button", href: "/teacher/catalog", "data-link": "", "data-catalog-link": "" }, "Открыть"),
+      ),
+      el(
+        "section",
+        { class: "card content-link" },
+        el("div", {}, el("h2", {}, "Инструкция"), el("p", { class: "muted" }, "Как вести группу, задавать домашку, проверять по критериям, открывать тесты.")),
+        el("a", { class: "button", href: "/help/teacher-guide", "data-link": "", "data-teacher-guide": "" }, "Открыть"),
       ),
       el(
         "section",
@@ -140,6 +149,23 @@ function reviewItem(s: QueueItem, d: TeacherDeps, rerender: () => void): HTMLEle
   }
   const comment = el("textarea", { class: "answer", rows: "2", maxlength: "4000", "aria-label": "Комментарий", placeholder: "Что получилось, над чем поработать" }) as HTMLTextAreaElement;
   const error = el("p", { class: "form-error", role: "alert" });
+  // With criteria: points for each, and the grade their sum suggests (the teacher may change it).
+  const rubric = s.homework_rubric ?? undefined;
+  const scores: Record<string, number> = {};
+  let gradeTouched = false;
+  const pickGrade = (g: number) => {
+    grade = g;
+    grades.querySelectorAll("button").forEach((x) => x.setAttribute("aria-checked", String(x.getAttribute("data-grade") === String(g))));
+    save.disabled = false;
+  };
+  const criteria = rubric
+    ? rubricPoints(rubric, scores, () => {
+        const max = rubric.criteria.reduce((n, c) => n + c.max, 0);
+        const got = Object.values(scores).reduce((n, v) => n + v, 0);
+        if (!gradeTouched && Object.keys(scores).length === rubric.criteria.length) pickGrade(suggestFromPoints(got, max));
+      })
+    : undefined;
+  grades.addEventListener("click", () => (gradeTouched = true));
   const form = el(
     "form",
     {
@@ -149,7 +175,7 @@ function reviewItem(s: QueueItem, d: TeacherDeps, rerender: () => void): HTMLEle
         if (!d.token || !grade) return;
         save.disabled = true;
         try {
-          await d.api.review(d.token, s.submission_id, grade, comment.value.trim());
+          await d.api.review(d.token, s.submission_id, grade, comment.value.trim(), rubric && Object.keys(scores).length ? { ...scores } : undefined);
           rerender();
         } catch (err) {
           error.textContent = messageOf(err);
@@ -157,6 +183,7 @@ function reviewItem(s: QueueItem, d: TeacherDeps, rerender: () => void): HTMLEle
         }
       },
     },
+    ...(criteria ? [criteria] : []),
     grades,
     comment,
     error,
@@ -208,6 +235,7 @@ function studentsTable(progress: GroupProgress): HTMLElement {
               s.week.errors[0] ? `чаще всего: ${s.week.errors[0].label.toLowerCase()}` : undefined,
               s.homework_open ? `не сдано: ${s.homework_open}` : undefined,
               s.lessons?.held ? `на уроках: ${s.lessons.present} из ${s.lessons.held}` : undefined,
+              s.consent?.required ? (s.consent.minor && s.consent.parent !== "ok" ? "⚠ нет согласия родителя" : "⚠ не принял документы") : undefined,
             ]
               .filter(Boolean)
               .join(" · "),
@@ -218,7 +246,7 @@ function studentsTable(progress: GroupProgress): HTMLElement {
   );
 }
 
-function groupCard(g: GroupView, dash: Dashboard, progress: GroupProgress | undefined, now: Date, d: TeacherDeps, rerender: () => void): HTMLElement {
+function groupCard(g: GroupView, dash: Dashboard, progress: GroupProgress | undefined, now: Date, d: TeacherDeps, rerender: () => void, rubrics: Rubric[]): HTMLElement {
   const members = g.members ?? [];
   const inviteBox = el("div", { class: "invite" });
   const inviteButton = el("button", { type: "button", "data-invite": g.group_id }, "Пригласить ученика") as HTMLButtonElement;
@@ -262,7 +290,7 @@ function groupCard(g: GroupView, dash: Dashboard, progress: GroupProgress | unde
     el("a", { class: "metrics-link", href: `/teacher/metrics/${g.group_id}`, "data-link": "", "data-metrics": g.group_id }, "Метрики пилота →"),
     el("h3", {}, "Домашка"),
     ...(homework.length ? homework.map((h) => homeworkItem(h, members.length, now, d)) : [el("p", { class: "muted" }, "Ещё ничего не задано.")]),
-    newHomeworkForm(g, d, rerender),
+    newHomeworkForm(g, d, rerender, rubrics),
   );
 }
 
@@ -337,7 +365,13 @@ function homeworkItem(h: HomeworkView, members: number, now: Date, d: TeacherDep
   );
 }
 
-function newHomeworkForm(g: GroupView, d: TeacherDeps, rerender: () => void): HTMLElement {
+function newHomeworkForm(g: GroupView, d: TeacherDeps, rerender: () => void, rubrics: Rubric[]): HTMLElement {
+  const rubric = el(
+    "select",
+    { class: "answer", name: "rubric_id", "aria-label": "Критерии" },
+    el("option", { value: "" }, "без критериев"),
+    ...rubrics.map((r) => el("option", { value: r.rubric_id }, `${r.title}: ${r.criteria.map((c) => c.label.toLowerCase()).join(", ")}`)),
+  ) as HTMLSelectElement;
   const title = el("input", { class: "answer", name: "title", maxlength: "120", required: "", "aria-label": "Название" }) as HTMLInputElement;
   const description = el("textarea", { class: "answer", name: "description", rows: "3", maxlength: "4000", "aria-label": "Что сделать" }) as HTMLTextAreaElement;
   const due = el("input", { class: "answer", type: "datetime-local", name: "due", "aria-label": "Срок" }) as HTMLInputElement;
@@ -359,6 +393,7 @@ function newHomeworkForm(g: GroupView, d: TeacherDeps, rerender: () => void): HT
             due_at: due.value ? moscowInputToIso(due.value) : null,
             needs_file: needsFile.checked,
             account_id: who.value || null,
+            ...(needsFile.checked && rubric.value ? { rubric_id: rubric.value } : {}),
           });
           rerender();
         } catch (err) {
@@ -371,6 +406,7 @@ function newHomeworkForm(g: GroupView, d: TeacherDeps, rerender: () => void): HT
     el("label", {}, "Кому", who),
     el("label", {}, "Срок (по Москве)", due),
     el("label", { class: "check" }, needsFile, "Сдаётся файлом: запись, фото или документ"),
+    ...(rubrics.length ? [el("label", {}, "Оценивать по критериям", rubric)] : []),
     error,
     el("button", { class: "primary", type: "submit" }, "Задать"),
     el("p", { class: "muted" }, "Юнит Moonbridge задаётся из ", el("a", { href: "/teacher/catalog", "data-link": "" }, "каталога уроков"), "."),
@@ -421,4 +457,33 @@ function newGroupForm(d: TeacherDeps, rerender: () => void, open: boolean): HTML
     el("button", { class: "primary", type: "submit" }, "Создать группу"),
   );
   return form;
+}
+
+/** Points to a grade, as for a unit's score: from 90% a 5, from 75% a 4, from 50% a 3. */
+export function suggestFromPoints(got: number, max: number): number {
+  const share = max > 0 ? got / max : 1;
+  return share >= 0.9 ? 5 : share >= 0.75 ? 4 : share >= 0.5 ? 3 : 2;
+}
+
+/** A row of point buttons (0…max) for each criterion; `onChange` after every tap. */
+function rubricPoints(rubric: RubricView, scores: Record<string, number>, onChange: () => void): HTMLElement {
+  return el(
+    "fieldset",
+    { class: "rubric", "data-rubric": rubric.title },
+    el("legend", {}, `Критерии: ${rubric.title}`),
+    ...rubric.criteria.map((c) => {
+      const row = el("div", { class: "points", role: "radiogroup", "aria-label": c.label });
+      for (let p = 0; p <= c.max; p++) {
+        const b = el("button", { type: "button", class: "point", role: "radio", "aria-checked": "false", "data-criterion": c.id, "data-points": String(p) }, String(p)) as HTMLButtonElement;
+        b.addEventListener("click", () => {
+          scores[c.id] = p;
+          row.querySelectorAll("button").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+          onChange();
+        });
+        row.append(b);
+      }
+      return el("div", { class: "criterion" }, el("p", {}, el("b", {}, c.label), ` · до ${c.max}`), ...(c.hint ? [el("p", { class: "muted" }, c.hint)] : []), row);
+    }),
+    el("p", { class: "muted" }, "Когда все критерии отмечены, оценка подставится сама: от 90% — 5, от 75% — 4, от 50% — 3."),
+  );
 }

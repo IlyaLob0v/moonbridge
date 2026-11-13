@@ -12,13 +12,14 @@
     "lrs:errors": "tsx --env-file-if-exists=../../docker/state/gateway.env src/cli/lrs-errors.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@fastify/formbody": "^9.0.1",
     "@moonbridge/content": "workspace:*",
+    "@moonbridge/learning": "workspace:*",
     "@moonbridge/xapi": "workspace:*",
     "fastify": "^5.12.7",
     "jose": "^6.2.13",
-    "pg": "^8.23.1",
-    "@electric-sql/pglite": "^0.5.11"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/pg": "^8.23.1"

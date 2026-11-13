@@ -80,11 +80,19 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   app.get("/health", async () => ({ ok: true, content_hash: live.bundle.content_hash }));
 
   // ---------- Content API
+  // The tests' tasks stay on the gateway: a student's phone must not hold their answers.
+  // The student fetches a test's tasks, without answers, when taking it (school/assessments.ts).
+  let shown: { hash: string; bundle: ContentBundle } | undefined;
+  const publicBundle = (): ContentBundle => {
+    const b = live.bundle;
+    if (shown?.hash !== b.content_hash) shown = { hash: b.content_hash, bundle: b.school ? { ...b, school: { ...b.school, assessments: [] } } : b };
+    return shown.bundle;
+  };
   app.get("/content/bundle", async (req, reply) => {
     const etag = `"${live.bundle.content_hash}"`;
     reply.header("ETag", etag).header("Cache-Control", "no-cache");
     if (req.headers["if-none-match"] === etag) return reply.code(304).send();
-    return live.bundle;
+    return publicBundle();
   });
 
   app.get("/content/manifest", async () => ({ content_hash: live.bundle.content_hash, built_at: live.bundle.built_at }));
